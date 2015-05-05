@@ -73,11 +73,10 @@ public abstract class Tracker {
 	
 	public abstract List<InetSocketAddress> announce();
 	
-	public static final int MIN_PEERS = 20;
 	
 	public List<InetSocketAddress> announceNone()
 	{
-		if(currentEvent == Event.NONE && tor.getPeersCount() >= MIN_PEERS && System.currentTimeMillis() < nextAnnounceTime)
+		if(currentEvent == Event.NONE && System.currentTimeMillis() < nextAnnounceTime)
 			return null;
 		
 		List<InetSocketAddress> ret = announce();

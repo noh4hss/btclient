@@ -1,5 +1,9 @@
 package btclient;
 
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -55,11 +59,13 @@ public class Pieces {
 	private int piecesCount;
 	private int lastPieceLength;
 	private int piecesDownloadedCount;
+	private long verifiedDownloadCount;
 	
 	private PieceFrag lastFrag;
 	private int lastFragLength;
 	private int pieceFragCount;
 	private int lastPieceFragCount;
+	private int fragsCount;
 	private AtomicInteger freePiecesCount;
 	
 	private Piece[] p;
@@ -67,6 +73,9 @@ public class Pieces {
 	private ArrayList<Integer> corruptedPieces; 
 	
 	private boolean endGame;
+	
+	private BitSet have;
+	private BitSet verified;
 	
 	private Random gen;
 	
@@ -83,6 +92,7 @@ public class Pieces {
 		lastFragLength = lastPieceLength % FRAG_LENGTH;
 		pieceFragCount = pieceLength / FRAG_LENGTH;
 		lastPieceFragCount = lastFrag.frag+1;
+		fragsCount = (piecesCount-1) * pieceFragCount + lastPieceFragCount;
 		freePiecesCount = new AtomicInteger(piecesCount);
 		
 		p = new Piece[piecesCount];
@@ -97,7 +107,75 @@ public class Pieces {
 		
 		corruptedPieces = new ArrayList<>();
 		
+		have = new BitSet(fragsCount);
+		verified = new BitSet(piecesCount);
+		
 		gen = new Random();
+	}
+
+	public boolean init(ObjectInputStream in) 
+	{
+		try {
+			BitSet newHave = (BitSet)in.readObject();
+			if(newHave.size() < fragsCount)
+				throw new IOException();
+			have = newHave;
+			System.err.println("have cardinality " + have.cardinality());
+			
+			BitSet newVerified = (BitSet)in.readObject();
+			if(newVerified.size() < piecesCount)
+				throw new IOException();
+			verified = newVerified;
+			
+			return true;
+		} catch (ClassNotFoundException | IOException e) {
+			e.printStackTrace();
+			return false;
+		}
+	}
+	
+	public void init()
+	{
+		// initializing only from have and verified bitsets
+		
+		freePiecesCount.set(0);
+		piecesDownloadedCount = 0;
+		verifiedDownloadCount = 0;
+		for(int i = 0; i < piecesCount; ++i) {
+			if(verified.get(i)) {
+				p[i].state = PieceState.VERIFIED;
+				++piecesDownloadedCount;
+				verifiedDownloadCount += getPieceLength(i);
+				continue;
+			}
+			
+			p[i].have.clear();
+			p[i].requested.clear();
+			for(int frag = 0; frag < getPieceFragCount(i); ++frag) {
+				if(have.get(toFragIndex(i, frag))) {
+					p[i].have.set(frag);
+					p[i].requested.set(frag);
+				}
+			}
+			
+			int card = p[i].have.cardinality();
+			p[i].writeCount = card;
+			if(card < getPieceFragCount(i)) {
+				p[i].state = PieceState.FREE;
+				freePiecesCount.incrementAndGet();
+			} else {
+				p[i].state = PieceState.DOWNLOADED;
+				diskDelegate.readPiece(i);
+			}
+		}
+		
+		endGame = false;
+		corruptedPieces.clear();
+	}
+	
+	private int toFragIndex(int index, int frag) 
+	{
+		return index*pieceFragCount + frag;
 	}
 
 	public int getPieceLength()
@@ -118,6 +196,11 @@ public class Pieces {
 	public int getFragLength(PieceFrag f) 
 	{
 		return f.equals(lastFrag) ? lastFragLength : FRAG_LENGTH;
+	}
+	
+	public int getFragsCount()
+	{
+		return fragsCount;
 	}
 	
 	public int getPieceFragCount(int index)
@@ -193,6 +276,7 @@ public class Pieces {
 	{
 		Piece piece = p[index];
 		int frag = begin / FRAG_LENGTH;
+		have.set(toFragIndex(index, frag));
 		
 		synchronized(piece) {
 			++piece.writeCount;
@@ -211,13 +295,15 @@ public class Pieces {
 			Piece piece = p[index];
 			
 			if(Arrays.equals(calcHash, piece.hash)) {
+				verified.set(index);
+				
 				synchronized(piece) {
 					piece.state = PieceState.VERIFIED;
 				}
-				
-				tor.increaseVerifiedDownloadCount(getPieceLength(index));
-				
+								
 				++piecesDownloadedCount;
+				verifiedDownloadCount += getPieceLength(index);
+				
 				if(piece.peer != null) {
 					if(!piece.peer.isTrusted())
 						piece.peer.setTrusted();
@@ -233,6 +319,8 @@ public class Pieces {
 				tor.blacklistAddress(piece.peer.getInetAddress());
 			}
 			
+			for(int frag = 0; frag < getPieceFragCount(index); ++frag)
+				have.clear(toFragIndex(index, frag));
 			synchronized(piece) {
 				piece.writeCount = 0;
 				piece.requested.clear();
@@ -383,5 +471,23 @@ public class Pieces {
 					corruptedPieces.add(i);
 			}
 		}
+	}
+
+	public boolean save(ObjectOutputStream out) 
+	{
+		System.err.println("have card: " + have.cardinality());
+		try {
+			out.writeObject(have);
+			out.writeObject(verified);
+			return true;
+		} catch(IOException e) {
+			e.printStackTrace();
+			return false;
+		}
+	}
+	
+	public long getVerifiedDownloadCount()
+	{
+		return verifiedDownloadCount;
 	}
 }

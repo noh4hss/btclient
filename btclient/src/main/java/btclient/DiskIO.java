@@ -52,89 +52,94 @@ public class DiskIO {
 		files = tor.getFiles();
 		writeRequests = new ConcurrentLinkedQueue<>();
 		readRequests = new ConcurrentLinkedQueue<>();
-		closed = false;
+		closed = true;
 	}
 
+	private Thread processThread;
+	
+	private Runnable runnable = new Runnable() {
+		@Override
+		public void run() 
+		{
+			createFiles();
+			
+			while(true) {
+				if(writeRequests.isEmpty() && readRequests.isEmpty()) {
+					try {
+						Thread.sleep(100);
+					} catch(InterruptedException e) {
+						
+					}
+				}
+				
+				while(!writeRequests.isEmpty()) {
+					WriteRequest req = writeRequests.poll();
+				
+					long begin = (long)pieces.getPieceLength() * req.index + req.begin;
+					int off = 0;
+					for(FileEntry e : files) {
+						if(begin < e.length) {
+							try(RandomAccessFile file = new RandomAccessFile(e.pathname, "rw")) {
+								file.seek(begin);
+								int len = (int)Math.min(req.block.length-off, e.length-begin);
+								file.write(req.block, off, len);
+								off += len;
+								begin += len;
+							} catch(Exception ee) {
+								ee.printStackTrace();
+							}
+						}
+						
+						if(off == req.block.length)
+							break;
+						
+						begin -= e.length;
+					}
+				
+					pieces.writeFragmentCompleted(req.index, req.begin, req.block.length);
+				}
+				
+				if(closed)
+					break;
+
+				if(!readRequests.isEmpty()) {
+					int index = readRequests.poll();
+					
+					byte[] piece = new byte[pieces.getPieceLength(index)];
+					long begin = (long)pieces.getPieceLength() * index;
+					int off = 0;
+					
+					for(FileEntry e : files) {
+						if(begin < e.length) {
+							try(RandomAccessFile file = new RandomAccessFile(e.pathname, "rw")) {
+								file.seek(begin);
+								int len = (int)Math.min(piece.length-off, e.length-begin);
+								file.readFully(piece, off, len);
+								off += len;
+								begin += len;
+							} catch(Exception ee) {
+								ee.printStackTrace();
+							}
+						}
+						
+						if(off == piece.length)
+							break;
+						
+						begin -= e.length;
+					}
+					
+					pieces.readPieceCompleted(index, piece);
+				}
+			}
+		}
+		
+	};
 	
 	public void start()
 	{
-		new Thread(new Runnable() {
-			@Override
-			public void run() 
-			{
-				createFiles();
-				
-				while(true) {
-					if(writeRequests.isEmpty() && readRequests.isEmpty()) {
-						try {
-							Thread.sleep(100);
-						} catch(InterruptedException e) {
-							
-						}
-					}
-					
-					while(!writeRequests.isEmpty()) {
-						WriteRequest req = writeRequests.poll();
-					
-						long begin = (long)pieces.getPieceLength() * req.index + req.begin;
-						int off = 0;
-						for(FileEntry e : files) {
-							if(begin < e.length) {
-								try(RandomAccessFile file = new RandomAccessFile(e.pathname, "rw")) {
-									file.seek(begin);
-									int len = (int)Math.min(req.block.length-off, e.length-begin);
-									file.write(req.block, off, len);
-									off += len;
-									begin += len;
-								} catch(Exception ee) {
-									ee.printStackTrace();
-								}
-							}
-							
-							if(off == req.block.length)
-								break;
-							
-							begin -= e.length;
-						}
-					
-						pieces.writeFragmentCompleted(req.index, req.begin, req.block.length);
-					}
-					
-					if(closed)
-						break;
-
-					if(!readRequests.isEmpty()) {
-						int index = readRequests.poll();
-						
-						byte[] piece = new byte[pieces.getPieceLength(index)];
-						long begin = (long)pieces.getPieceLength() * index;
-						int off = 0;
-						
-						for(FileEntry e : files) {
-							if(begin < e.length) {
-								try(RandomAccessFile file = new RandomAccessFile(e.pathname, "rw")) {
-									file.seek(begin);
-									int len = (int)Math.min(piece.length-off, e.length-begin);
-									file.readFully(piece, off, len);
-									off += len;
-									begin += len;
-								} catch(Exception ee) {
-									ee.printStackTrace();
-								}
-							}
-							
-							if(off == piece.length)
-								break;
-							
-							begin -= e.length;
-						}
-						
-						pieces.readPieceCompleted(index, piece);
-					}
-				}
-			}
-			
-		}).start();
+		closed = false;
+		processThread = new Thread(runnable);
+		processThread.start();
 	}
 	
 	public void writePieceFragment(int index, int begin, byte[] block)
@@ -151,6 +156,13 @@ public class DiskIO {
 	public void close()
 	{
 		closed = true;
+	}
+	
+	public void forceClose()
+	{
+		closed = true;
+		if(processThread != null && processThread.isAlive())
+			processThread.interrupt();
 	}
 	
 	private void createFiles()

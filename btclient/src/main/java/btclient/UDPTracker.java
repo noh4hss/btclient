@@ -70,7 +70,7 @@ public class UDPTracker extends Tracker {
 			long connId = getConnectionId();
 			return getPeerList(connId);
 		} catch(IOException e) {
-			System.err.println("announce on tracker " + url + " " + e.getMessage());
+			//System.err.println("announce on tracker " + url + " " + e.getMessage());
 			return null;
 		}
 	}

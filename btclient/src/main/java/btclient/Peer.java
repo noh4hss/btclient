@@ -113,7 +113,7 @@ public class Peer {
 					receiveMessages();
 				
 				} catch(IOException e) {
-					e.printStackTrace();
+					//e.printStackTrace();
 					pieces.pieceReceiveFailed(requestedFrags);
 					
 					closed = true;

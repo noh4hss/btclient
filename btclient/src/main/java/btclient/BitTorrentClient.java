@@ -4,6 +4,7 @@ package btclient;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -30,28 +31,16 @@ import javafx.stage.Stage;
 public class BitTorrentClient extends Application {
 	List<Torrent> torrents;
 	
-	public BitTorrentClient()
-	{
-		torrents = new ArrayList<>();
-	}
-	
-	public static void main(String[] args)
-	{	
-		BitTorrentClient app = new BitTorrentClient();
-		app.start();
-	}
-	
-	public void start()
-	{	
-		Application.launch();
-	}
-
 	private Stage mainStage;
 	private VBox root;
 	
 	@Override
 	public void start(Stage stage) throws Exception 
 	{
+		torrents = Collections.synchronizedList(new ArrayList<>());
+		TorrentCache.addTorrents(torrents);
+		TorrentCache.start(torrents);
+		
 		Stage mainStage = stage;
 		mainStage.setTitle("BitTorrent Client");
 		root = new VBox();
@@ -63,7 +52,8 @@ public class BitTorrentClient extends Application {
 		root.getChildren().add(menuBar);
 		MenuItem open = new MenuItem("Open");
 		MenuItem stopAll = new MenuItem("Stop All");
-		menuFile.getItems().addAll(open, stopAll);
+		MenuItem startAll = new MenuItem("Start All");
+		menuFile.getItems().addAll(open, stopAll, startAll);
 		open.setOnAction(openTorrent);
 		stopAll.setOnAction(new EventHandler<ActionEvent>() {
 			@Override
@@ -72,12 +62,22 @@ public class BitTorrentClient extends Application {
 				for(Torrent tor : torrents)
 					tor.stop();
 			}
-			
+		});
+		startAll.setOnAction(new EventHandler<ActionEvent>() {
+			@Override
+			public void handle(ActionEvent event) 
+			{
+				for(Torrent tor : torrents)
+					tor.start();
+			}
 		});
 		Scene scene = new Scene(root, 700, 600);
 		mainStage.setScene(scene);
 		
 		mainStage.show();
+		
+		for(Torrent tor : torrents)
+			addTorrent(tor);
 	}
 	
 	EventHandler<ActionEvent> openTorrent = new EventHandler<ActionEvent>() {
@@ -98,51 +98,57 @@ public class BitTorrentClient extends Application {
 			try {
 				final Torrent tor = new Torrent(file);
 				torrents.add(tor);
-				System.err.println(tor.getTotalSize());				
-				if(!tor.start()) {
-					System.err.println("could not start torrent");
-					return;
-				}
-			
-				Text torrentName = new Text(tor.getName());
-				
-				final ProgressBar progressBar = new ProgressBar(0);
-				progressBar.prefWidthProperty().bind(root.widthProperty().subtract(20));
-				
-				HBox stats = new HBox(30);
-				final Text speedStat = new Text();
-				final Text downloadedStat = new Text();
-				final Text peersStat = new Text();
-				stats.getChildren().addAll(speedStat, downloadedStat, peersStat);		
-				root.getChildren().addAll(torrentName, progressBar, stats);
-				
-				new Timer().schedule(new TimerTask() {
-					long lastDownloaded = 0;	
-					
-					@Override
-					public void run() 
-					{
-						
-						Platform.runLater(new Runnable() {
 
-							@Override
-							public void run() {
-								long currentDownloaded = tor.getDownloadCount();
-								double progress = (double)currentDownloaded / tor.getTotalSize();
-								progressBar.setProgress(progress);
-								speedStat.setText(" speed: " + (currentDownloaded - lastDownloaded) / 1024 + "KB/s");
-								long downloaded = tor.getVerifiedDownloadCount();
-								downloadedStat.setText("downloaded: " + downloaded/(1<<20) + "." + downloaded/1024%1024*10/1024 + "MB");
-								peersStat.setText("peers: " + tor.getPeersCount());
-								lastDownloaded = currentDownloaded;
-							}
-						});
-						
-					}
-				}, 0, 1000);
+				addTorrent(tor);
+				
 			} catch(IOException e) {
 				System.err.println(e.getMessage());
 			}
 		}
 	};
+	
+	private void addTorrent(Torrent tor)
+	{
+		if(!tor.start()) {
+			System.err.println("could not start torrent");
+			return;
+		}
+	
+		Text torrentName = new Text(tor.getName());
+		
+		final ProgressBar progressBar = new ProgressBar(0);
+		progressBar.prefWidthProperty().bind(root.widthProperty().subtract(20));
+		
+		HBox stats = new HBox(30);
+		final Text speedStat = new Text();
+		final Text downloadedStat = new Text();
+		final Text peersStat = new Text();
+		stats.getChildren().addAll(speedStat, downloadedStat, peersStat);		
+		root.getChildren().addAll(torrentName, progressBar, stats);
+		
+		new Timer().schedule(new TimerTask() {
+			long lastDownloaded = 0;	
+			
+			@Override
+			public void run() 
+			{
+				
+				Platform.runLater(new Runnable() {
+
+					@Override
+					public void run() {
+						long currentDownloaded = tor.getDownloadCount();
+						long downloaded = tor.getVerifiedDownloadCount();
+						double progress = (double)downloaded / tor.getTotalSize();
+						progressBar.setProgress(progress);
+						speedStat.setText(" speed: " + (currentDownloaded - lastDownloaded) / 1024 + "KB/s");
+						downloadedStat.setText("downloaded: " + downloaded/(1<<20) + "." + downloaded/1024%1024*10/1024 + "MB");
+						peersStat.setText("peers: " + tor.getPeersCount());
+						lastDownloaded = currentDownloaded;
+					}
+				});
+				
+			}
+		}, 0, 1000);
+	}
 }

@@ -2,10 +2,14 @@ package btclient;
 
 
 
+import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
@@ -29,6 +33,11 @@ import java.util.concurrent.atomic.AtomicLong;
 
 
 public class Torrent {
+	private enum State {
+		IDLE,
+		RUNNING	
+	}
+	
 	private List<Tracker> trackers;
 	
 	private String name;
@@ -38,12 +47,12 @@ public class Torrent {
 	private List<DiskIO.FileEntry> files;
 	
 	private byte[] infoHash;
+	private String infoHashStr;
 	private byte[] peerId;
 	
 	private long totalSize;
 	private AtomicLong downloadCount;
 	private long uploadCount;
-	private long verifiedDownloadCount;
 	
 	private ServerSocket listenSock;
 	private int listenPort;
@@ -61,7 +70,7 @@ public class Torrent {
 	
 	private String downloadDirectory;
 	
-	private boolean stopped;
+	private State state;
 	
 	private Timer timer;
 	private long downloadSpeed;
@@ -92,6 +101,16 @@ public class Torrent {
 			MessageDigest md = MessageDigest.getInstance("SHA-1");
 			infoHash = md.digest(Arrays.copyOfRange(b, startPos, endPos));
 
+			final char[] hexArray = "0123456789ABCDEF".toCharArray();
+			char[] hexChars = new char[infoHash.length * 2];
+			for ( int j = 0; j < infoHash.length; j++) {
+				int v = infoHash[j] & 0xFF;
+				hexChars[j * 2] = hexArray[v >>> 4];
+				hexChars[j * 2 + 1] = hexArray[v & 0x0F];
+			}
+			infoHashStr = new String(hexChars);
+			
+			
 			peerId = new byte[20];
 			ByteArrayOutputStream out = new ByteArrayOutputStream(20);
 			out.write("btclient".getBytes());
@@ -105,11 +124,13 @@ public class Torrent {
 			uploadCount = 0;
 			downloadCount = new AtomicLong(0);
 						
-			stopped = false;
+			state = State.IDLE;
 			
 			timer = new Timer();
 			
 			setDefaultDownloadDirectory();
+		
+			TorrentCache.createFiles(this, b);
 		} catch(Exception e) {
 			throw new IOException("invalid file format");
 		}
@@ -159,11 +180,32 @@ public class Torrent {
 			files.add( new DiskIO.FileEntry(path, fm.get("length").getLong()) );
 		}
 	}
+
+	public boolean init(ObjectInputStream in) 
+	{
+		return pieces.init(in);
+	}
 	
 	public boolean start()
 	{
+		if(state != State.IDLE)
+			return true;
+		
+		if(connectThread != null && connectThread.isAlive())
+			connectThread.interrupt();
+		if(announceThread != null && announceThread.isAlive())
+			announceThread.interrupt();
+		if(listenThread != null && listenThread.isAlive())
+			listenThread.interrupt();
+		if(peersThread != null && peersThread.isAlive())
+			peersThread.interrupt();
+		if(diskDelegate != null)
+			diskDelegate.forceClose();
+		
 		if(!initListenSocket())
 			return false;
+		state = State.RUNNING;
+		
 		peers = Collections.synchronizedList(new LinkedList<Peer>());
 		peersAddresses = Collections.synchronizedSet(new HashSet<InetSocketAddress>());
 		candidatePeers = Collections.synchronizedList(new LinkedList<InetSocketAddress>());
@@ -171,11 +213,16 @@ public class Torrent {
 		
 		peersCount = new AtomicInteger(0);
 		
-		
 		diskDelegate.start();
+		pieces.init();
+		
+		connectThread = new Thread(connectRunnable);
 		connectThread.start();
+		announceThread = new Thread(announceRunnable);
 		announceThread.start();
+		listenThread = new Thread(listenRunnable);
 		listenThread.start();
+		peersThread = new Thread(peersRunnable);
 		peersThread.start();
 		
 		return true;
@@ -183,12 +230,18 @@ public class Torrent {
 
 	public void stop()
 	{
-		stopped = true;
+		state = State.IDLE;
 		synchronized(peers) {
 			for(Peer peer : peers)
 				peer.forceClose();
+			peers.clear();
+			peersCount.set(0);
 		}
 		diskDelegate.close();
+		try {
+			listenSock.close();
+		} catch(IOException e) {		
+		}
 		
 	}
 	
@@ -205,11 +258,16 @@ public class Torrent {
 	}
 	
 	
-	private Thread connectThread = new Thread(new Runnable() {
+	private Thread connectThread;
+	private Thread listenThread;
+	private Thread announceThread;
+	private Thread peersThread;
+	
+	private Runnable connectRunnable = new Runnable() {
 		@Override
 		public void run() 
 		{
-			while(!stopped) {
+			while(isRunning()) {
 				if(candidatePeers.isEmpty() || peersCount.get() >= maxPeers) {
 					try {
 						Thread.sleep(200);
@@ -233,14 +291,14 @@ public class Torrent {
 			}
 		}
 		
-	});
+	};
 	
-	private Thread listenThread = new Thread(new Runnable() {
+	private Runnable listenRunnable = new Runnable() {
 
 		@Override
 		public void run() 
 		{
-			while(!stopped) {
+			while(isRunning()) {
 				if(getPeersCount() >= maxPeers) {
 					try {
 						Thread.sleep(1000);
@@ -274,12 +332,12 @@ public class Torrent {
 			}
 		}
 		
-	});
+	};
 	
 	private int trackerIndex;
 	private static final int MAX_ANNOUNCE_THREADS = 5;
-	
-	private Thread announceThread = new Thread(new Runnable() {
+
+	private Runnable announceRunnable = new Runnable() {
 		@Override
 		public void run() 
 		{
@@ -308,12 +366,12 @@ public class Torrent {
 				}).start();
 			}
 			
-			while(!stopped) {
+			while(isRunning()) {
 				for(Tracker tr : trackers) 
 					addPeers(tr.announceNone());
 			
 				try {
-					Thread.sleep(200);
+					Thread.sleep(1000);
 				} catch(InterruptedException e) {
 					
 				}
@@ -325,13 +383,13 @@ public class Torrent {
 			}
 		}
 		
-	});
+	};
 	
-	private Thread peersThread = new Thread(new Runnable() {
+	private Runnable peersRunnable = new Runnable() {
 		@Override
 		public void run() 
 		{
-			while(!stopped) {
+			while(isRunning()) {
 				try {
 					Thread.sleep(500);
 				} catch(InterruptedException e) {
@@ -356,7 +414,7 @@ public class Torrent {
 			}
 		}
 		
-	});
+	};
 
 	
 	
@@ -486,12 +544,7 @@ public class Torrent {
 
 	public long getVerifiedDownloadCount()
 	{
-		return verifiedDownloadCount;
-	}
-	
-	public void increaseVerifiedDownloadCount(int delta)
-	{
-		verifiedDownloadCount += delta;
+		return pieces.getVerifiedDownloadCount();
 	}
 
 	public String getName() 
@@ -511,7 +564,7 @@ public class Torrent {
 	
 	public long getLeftCount()
 	{
-		return totalSize - downloadCount.get();
+		return totalSize - getVerifiedDownloadCount();
 	}
 	
 	public long getDownloadSpeed()
@@ -523,4 +576,21 @@ public class Torrent {
 	{
 		return uploadSpeed;
 	}
+	
+	public boolean isRunning()
+	{
+		return state != State.IDLE;
+	}
+
+	public String getInfoHashStr() 
+	{
+		return infoHashStr;
+	}
+
+	public boolean save(ObjectOutputStream out) 
+	{
+		return pieces.save(out);
+	}
+
+	
 }
