@@ -69,7 +69,7 @@ public class Pieces {
 	private AtomicInteger freePiecesCount;
 	
 	private Piece[] p;
-	private DiskIO diskDelegate;
+	private FragmentSaver fragmentSaver;
 	private ArrayList<Integer> corruptedPieces; 
 	
 	private boolean endGame;
@@ -165,7 +165,7 @@ public class Pieces {
 				freePiecesCount.incrementAndGet();
 			} else {
 				p[i].state = PieceState.DOWNLOADED;
-				diskDelegate.readPiece(i);
+				fragmentSaver.readPiece(i);
 			}
 		}
 		
@@ -255,9 +255,9 @@ public class Pieces {
 		};
 	}
 	
-	public void setDiskDelegate(DiskIO diskDelagate)
+	public void setDiskDelegate(FragmentSaver diskDelagate)
 	{
-		this.diskDelegate = diskDelagate;
+		this.fragmentSaver = diskDelagate;
 	}
 	
 	
@@ -269,7 +269,7 @@ public class Pieces {
 				return;
 			piece.have.set(f.frag);
 		}
-		diskDelegate.writePieceFragment(f.index, f.frag*FRAG_LENGTH, block);
+		fragmentSaver.writePieceFragment(f.index, f.frag*FRAG_LENGTH, block);
 	}
 	
 	public void writeFragmentCompleted(int index, int begin, int length)
@@ -282,7 +282,7 @@ public class Pieces {
 			++piece.writeCount;
 			if(piece.writeCount == getPieceFragCount(index)) {
 				piece.state = PieceState.DOWNLOADED;
-				diskDelegate.readPiece(index);
+				fragmentSaver.readPiece(index);
 			}
 		}
 	}
@@ -475,7 +475,6 @@ public class Pieces {
 
 	public boolean save(ObjectOutputStream out) 
 	{
-		System.err.println("have card: " + have.cardinality());
 		try {
 			out.writeObject(have);
 			out.writeObject(verified);
@@ -489,5 +488,10 @@ public class Pieces {
 	public long getVerifiedDownloadCount()
 	{
 		return verifiedDownloadCount;
+	}
+
+	public void setFragmentSaver(FragmentSaver fragmentSaver) 
+	{
+		this.fragmentSaver = fragmentSaver;
 	}
 }

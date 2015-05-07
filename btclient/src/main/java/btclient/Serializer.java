@@ -12,17 +12,61 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.util.List;
 
-public class TorrentCache {
+public class Serializer implements TorrentWorker {
+	private List<Torrent> torrents;
+	private Thread mainThread;
+	
 	private static final File defaultDirectory = new File(
 			System.getProperty("user.home") + File.separator + ".btclient");
 
 	private static final File torrentsDirectory = new File(
 			defaultDirectory.getPath() + File.separator + "torrents");
 	
-	public static void addTorrents(List<Torrent> torrents) 
+	public Serializer(List<Torrent> torrents)
 	{
+		this.torrents = torrents;
 		defaultDirectory.mkdir();
 		torrentsDirectory.mkdir();
+	}
+	
+	@Override
+	public void start()
+	{
+		mainThread = new Thread(new Runnable() {
+
+			@Override
+			public void run() 
+			{
+				while(!Thread.currentThread().isInterrupted()) {
+					try {
+						Thread.sleep(1000);
+					} catch(InterruptedException e) {
+						break;
+					}
+				
+					for(int i = 0; i < torrents.size(); ++i) {
+						saveTorrent(torrents.get(i));		
+					}
+				}
+				
+				for(int i = 0; i < torrents.size(); ++i) {
+					saveTorrent(torrents.get(i));
+				}
+			}
+		});
+		
+		mainThread.start();
+	}
+
+	@Override
+	public void stop() 
+	{
+		mainThread.interrupt();
+	}
+	
+
+	public void loadTorrents()
+	{
 		for(File file : torrentsDirectory.listFiles()) {
 			if(!file.isDirectory())
 				continue;
@@ -46,7 +90,8 @@ public class TorrentCache {
 		}
 	}
 	
-	public static void createFiles(Torrent tor, byte[] b)
+	
+	public void createFiles(Torrent tor, byte[] b)
 	{
 		File torrentDirectory = new File(torrentsDirectory + File.separator + tor.getInfoHashStr());
 		if(!torrentDirectory.mkdir())
@@ -67,32 +112,14 @@ public class TorrentCache {
 		
 	}
 	
-	public static void start(List<Torrent> torrents)
+	private void saveTorrent(Torrent tor)
 	{
-		new Thread(new Runnable() {
-
-			@Override
-			public void run() 
-			{
-				while(true) {
-					try {
-						Thread.sleep(1000);
-					} catch(InterruptedException e) {
-					
-					}
-				
-					for(int i = 0; i < torrents.size(); ++i) {
-						Torrent tor = torrents.get(i);
-						File torrentDirectory = new File(torrentsDirectory.getPath() + File.separator + tor.getInfoHashStr());
-						File dataFile = new File(torrentDirectory.getPath() + File.separator + "bindata");
-						try(ObjectOutputStream out = new ObjectOutputStream(new BufferedOutputStream(new FileOutputStream(dataFile)))) {
-							tor.save(out);
-						} catch (IOException e) {
-							e.printStackTrace();
-						}
-					}
-				}
-			}
-		}).start();
+		File torrentDirectory = new File(torrentsDirectory.getPath() + File.separator + tor.getInfoHashStr());
+		File dataFile = new File(torrentDirectory.getPath() + File.separator + "bindata");
+		try(ObjectOutputStream out = new ObjectOutputStream(new BufferedOutputStream(new FileOutputStream(dataFile)))) {
+			tor.save(out);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
 	}
 }

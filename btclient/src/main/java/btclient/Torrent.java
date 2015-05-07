@@ -4,6 +4,7 @@ package btclient;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.Closeable;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -44,7 +45,7 @@ public class Torrent {
 	
 	private Pieces pieces;
 	
-	private List<DiskIO.FileEntry> files;
+	private List<FragmentSaver.FileEntry> files;
 	
 	private byte[] infoHash;
 	private String infoHashStr;
@@ -66,8 +67,6 @@ public class Torrent {
 	private List<InetSocketAddress> candidatePeers;
 	private Set<InetAddress> blacklist;
 	
-	private DiskIO diskDelegate;
-	
 	private String downloadDirectory;
 	
 	private State state;
@@ -75,6 +74,11 @@ public class Torrent {
 	private Timer timer;
 	private long downloadSpeed;
 	private long uploadSpeed;
+	
+	private Announcer announcer;
+	private FragmentSaver fragmentSaver;
+
+	private static Serializer serializer;
 	
 	public Torrent(File file) throws IOException
 	{
@@ -87,14 +91,18 @@ public class Torrent {
 		try {
 			Map<String, BeObject> root = BeObject.parse(b).getMap();
 			initTrackerInfo(root);
+			announcer = new Announcer(this, trackers);
 			Map<String, BeObject> info = root.get("info").getMap();
 			initFilesInfo(info);
+			
+			setDefaultDownloadDirectory();
+			
 			totalSize = 0;
-			for(DiskIO.FileEntry e : files)
+			for(FragmentSaver.FileEntry e : files)
 				totalSize += e.length;
 			pieces = new Pieces(this, info, totalSize);
-			diskDelegate = new DiskIO(this);
-			pieces.setDiskDelegate(diskDelegate);
+			fragmentSaver = new FragmentSaver(this);
+			pieces.setFragmentSaver(fragmentSaver);
 			
 			int startPos = root.get("info").getStartPosition();
 			int endPos = root.get("info").getEndPosition();
@@ -126,11 +134,8 @@ public class Torrent {
 						
 			state = State.IDLE;
 			
-			timer = new Timer();
-			
-			setDefaultDownloadDirectory();
 		
-			TorrentCache.createFiles(this, b);
+			serializer.createFiles(this, b);
 		} catch(Exception e) {
 			throw new IOException("invalid file format");
 		}
@@ -167,7 +172,7 @@ public class Torrent {
 		if(m.get("files") == null) {
 			List<String> path = new ArrayList<>();
 			path.add(name);
-			files.add( new DiskIO.FileEntry(path, m.get("length").getLong()) );
+			files.add( new FragmentSaver.FileEntry(path, m.get("length").getLong()) );
 			return;
 		}
 		
@@ -177,7 +182,7 @@ public class Torrent {
 			path.add(name);
 			for(BeObject str : fm.get("path").getList())
 				path.add(str.getString());
-			files.add( new DiskIO.FileEntry(path, fm.get("length").getLong()) );
+			files.add( new FragmentSaver.FileEntry(path, fm.get("length").getLong()) );
 		}
 	}
 
@@ -191,16 +196,7 @@ public class Torrent {
 		if(state != State.IDLE)
 			return true;
 		
-		if(connectThread != null && connectThread.isAlive())
-			connectThread.interrupt();
-		if(announceThread != null && announceThread.isAlive())
-			announceThread.interrupt();
-		if(listenThread != null && listenThread.isAlive())
-			listenThread.interrupt();
-		if(peersThread != null && peersThread.isAlive())
-			peersThread.interrupt();
-		if(diskDelegate != null)
-			diskDelegate.forceClose();
+		
 		
 		if(!initListenSocket())
 			return false;
@@ -213,17 +209,15 @@ public class Torrent {
 		
 		peersCount = new AtomicInteger(0);
 		
-		diskDelegate.start();
 		pieces.init();
 		
-		connectThread = new Thread(connectRunnable);
-		connectThread.start();
-		announceThread = new Thread(announceRunnable);
-		announceThread.start();
-		listenThread = new Thread(listenRunnable);
-		listenThread.start();
-		peersThread = new Thread(peersRunnable);
-		peersThread.start();
+		fragmentSaver.start();
+		peerConnecter.start();
+		announcer.start();
+		peerListener.start();
+		peerManager.start();
+		timer = new Timer();
+		scheduleSpeedMeasurementTask();
 		
 		return true;
 	}
@@ -231,18 +225,29 @@ public class Torrent {
 	public void stop()
 	{
 		state = State.IDLE;
+		
+		
+		
+		announcer.stop();
+		
+		try {
+			listenSock.close();
+		} catch(IOException e) {		
+		}
+		
+		peerListener.stop();
+		peerConnecter.stop();
+		peerManager.stop();
+		
 		synchronized(peers) {
 			for(Peer peer : peers)
 				peer.forceClose();
 			peers.clear();
 			peersCount.set(0);
 		}
-		diskDelegate.close();
-		try {
-			listenSock.close();
-		} catch(IOException e) {		
-		}
 		
+		fragmentSaver.stop();
+		timer.cancel();	
 	}
 	
 	private boolean initListenSocket()
@@ -258,159 +263,173 @@ public class Torrent {
 	}
 	
 	
-	private Thread connectThread;
-	private Thread listenThread;
-	private Thread announceThread;
-	private Thread peersThread;
-	
-	private Runnable connectRunnable = new Runnable() {
-		@Override
-		public void run() 
-		{
-			while(isRunning()) {
-				if(candidatePeers.isEmpty() || peersCount.get() >= maxPeers) {
-					try {
-						Thread.sleep(200);
-					} catch(InterruptedException e) {
-					}
-					continue;
-				}
-				
-				InetSocketAddress addr = candidatePeers.get(0);
-				candidatePeers.remove(0);
-				if(peersAddresses.contains(addr) || blacklist.contains(addr.getAddress()))
-					continue;
-				peersAddresses.add(addr);
-				
-				Peer peer = new Peer(Torrent.this, addr);
-				synchronized(peers) {
-					peers.add(peer);
-				}
-				peersCount.incrementAndGet();
-				peer.start();
-			}
-		}
+	private TorrentWorker peerConnecter = new TorrentWorker() {
+		private Thread mainThread;
 		
-	};
-	
-	private Runnable listenRunnable = new Runnable() {
-
 		@Override
-		public void run() 
+		public void start() 
 		{
-			while(isRunning()) {
-				if(getPeersCount() >= maxPeers) {
-					try {
-						Thread.sleep(1000);
-					} catch(InterruptedException e) {
+			mainThread = new Thread(new Runnable() {
+				
+				@Override
+				public void run() 
+				{
+					while(!Thread.currentThread().isInterrupted()) {
 						
-					}
-					continue;
-				}
-				
-				try {
-					Socket sock = listenSock.accept();
-					if(blacklist.contains(sock.getInetAddress())) {
-						try {
-							sock.close();
-						} catch(IOException e) {
-							
-						}
-					}
-					
-					Peer peer = new Peer(Torrent.this, sock);
-					synchronized(peers) {
-						peers.add(peer);
-					}
-					peersAddresses.add(new InetSocketAddress(sock.getInetAddress(), sock.getPort()));
-					peer.start();
-					
-				} catch(IOException e) {
-					e.printStackTrace();
-					break;
-				}
-			}
-		}
-		
-	};
-	
-	private int trackerIndex;
-	private static final int MAX_ANNOUNCE_THREADS = 5;
-
-	private Runnable announceRunnable = new Runnable() {
-		@Override
-		public void run() 
-		{
-			for(Tracker tr : trackers)
-				tr.announceStarted();
-			
-			trackerIndex = 0;
-			for(int i = 0; i < MAX_ANNOUNCE_THREADS; ++i) {
-				new Thread(new Runnable() {
-					@Override
-					public void run() 
-					{
-						while(true) {
-							Tracker tr;
-							synchronized(trackers) {
-								if(trackerIndex == trackers.size())
-									break;
-								tr = trackers.get(trackerIndex);
-								++trackerIndex;
+						if(candidatePeers.isEmpty() || peersCount.get() >= maxPeers) {
+							try {
+								Thread.sleep(1000);
+							} catch(InterruptedException e) {
+								return;
 							}
-							System.err.println("announce on " + tr.getURL());
-							addPeers(tr.announceNone());
+							continue;
 						}
+						
+						InetSocketAddress addr = candidatePeers.get(0);
+						candidatePeers.remove(0);
+						if(peersAddresses.contains(addr) || blacklist.contains(addr.getAddress()))
+							continue;
+						peersAddresses.add(addr);
+						
+						Peer peer = new Peer(Torrent.this, addr);
+						synchronized(peers) {
+							peers.add(peer);
+						}
+						peersCount.incrementAndGet();
+						peer.start();
 					}
-					
-				}).start();
-			}
-			
-			while(isRunning()) {
-				for(Tracker tr : trackers) 
-					addPeers(tr.announceNone());
-			
-				try {
-					Thread.sleep(1000);
-				} catch(InterruptedException e) {
-					
 				}
-			}
+			});
 			
-			for(Tracker tr : trackers) {
-				tr.announceStopped();
-				tr.announceNone();
+			mainThread.start();
+		}
+
+		@Override
+		public void stop() 
+		{
+			mainThread.interrupt();
+			try {
+				mainThread.join();
+			} catch(InterruptedException e) {
 			}
 		}
 		
 	};
 	
-	private Runnable peersRunnable = new Runnable() {
+
+	
+	private TorrentWorker peerManager = new TorrentWorker() {
+		private Thread mainThread;
+		
 		@Override
-		public void run() 
+		public void start() 
 		{
-			while(isRunning()) {
-				try {
-					Thread.sleep(500);
-				} catch(InterruptedException e) {
+			mainThread = new Thread(new Runnable() {
+				
+				@Override
+				public void run() 
+				{
+					while(!Thread.currentThread().isInterrupted()) {
+						try {
+							Thread.sleep(1000);
+						} catch(InterruptedException e) {
+							return;
+						}
+						
+						if(!pieces.isEndGameOn() && pieces.getFreePiecesCount() == 0) 
+							pieces.startEndGame();
+						
+						synchronized(peers) {
+							Iterator<Peer> it = peers.iterator();
+							while(it.hasNext()) {
+								Peer peer = it.next();
+								if(peer.isClosed()) {
+									it.remove();
+									peersAddresses.remove(peer.getAddress());
+									peersCount.decrementAndGet();
+								}
+							}
+							
+							pieces.addCorruptedPieces(peers);
+						}
+					}
 				}
+			});
+			
+			mainThread.start();
+		}
+
+		@Override
+		public void stop() 
+		{
+			mainThread.interrupt();
+			try {
+				mainThread.join();
+			} catch(InterruptedException e) {
 				
-				if(!pieces.isEndGameOn() && pieces.getFreePiecesCount() == 0) 
-					pieces.startEndGame();
-				
-				synchronized(peers) {
-					Iterator<Peer> it = peers.iterator();
-					while(it.hasNext()) {
-						Peer peer = it.next();
-						if(peer.isClosed()) {
-							it.remove();
-							peersAddresses.remove(peer.getAddress());
-							peersCount.decrementAndGet();
+			}
+		}
+		
+	};
+	
+	private TorrentWorker peerListener = new TorrentWorker() {
+		private Thread mainThread;
+		
+		@Override
+		public void start() 
+		{
+			mainThread = new Thread(new Runnable() {
+
+				@Override
+				public void run() 
+				{					
+					while(!Thread.currentThread().isInterrupted()) {						
+						
+						if(getPeersCount() >= maxPeers) {
+							try {
+								Thread.sleep(1000);
+							} catch(InterruptedException e) {
+								return;
+							}
+							continue;
+						}
+						
+						try {
+							Socket sock = listenSock.accept();
+							if(blacklist.contains(sock.getInetAddress())) {
+								try {
+									sock.close();
+								} catch(IOException e) {
+									
+								}
+							}
+							
+							Peer peer = new Peer(Torrent.this, sock);
+							synchronized(peers) {
+								peers.add(peer);
+							}
+							peersAddresses.add(new InetSocketAddress(sock.getInetAddress(), sock.getPort()));
+							peer.start();
+							
+						} catch(IOException e) {
+							return;
 						}
 					}
 					
-					pieces.addCorruptedPieces(peers);
-				}
+				}					
+			});
+			
+			mainThread.start();
+		}
+
+		@Override
+		public void stop() 
+		{
+			mainThread.interrupt();
+			try {
+				mainThread.join();
+			} catch(InterruptedException e) {
+				
 			}
 		}
 		
@@ -418,7 +437,7 @@ public class Torrent {
 
 	
 	
-	private void addPeers(List<InetSocketAddress> newPeers)
+	void addPeers(List<InetSocketAddress> newPeers)
 	{
 		if(newPeers == null)
 			return;
@@ -443,9 +462,9 @@ public class Torrent {
 		return pieces;
 	}
 	
-	public DiskIO getDiskDelegate()
+	public FragmentSaver getFragmentSaver()
 	{
-		return diskDelegate;
+		return fragmentSaver;
 	}
 
 	public void increaseDownloaded(int length) 
@@ -484,7 +503,7 @@ public class Torrent {
 		return downloadDirectory;
 	}
 	
-	private void scheduleSpeedTask()
+	private void scheduleSpeedMeasurementTask()
 	{
 		timer.schedule(new TimerTask() {
 			long lastDownloaded = getDownloadCount();
@@ -506,7 +525,7 @@ public class Torrent {
 		}, 0, 1000);
 	}
 	
-	public List<DiskIO.FileEntry> getFiles()
+	public List<FragmentSaver.FileEntry> getFiles()
 	{
 		return files;
 	}
@@ -591,6 +610,9 @@ public class Torrent {
 	{
 		return pieces.save(out);
 	}
-
 	
+	public static void setSerializer(Serializer serializer)
+	{
+		Torrent.serializer = serializer;
+	}
 }

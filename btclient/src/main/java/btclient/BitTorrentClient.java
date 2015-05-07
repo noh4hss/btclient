@@ -29,7 +29,8 @@ import javafx.stage.Stage;
 
 
 public class BitTorrentClient extends Application {
-	List<Torrent> torrents;
+	private List<Torrent> torrents;
+	private Serializer serializer;
 	
 	private Stage mainStage;
 	private VBox root;
@@ -38,8 +39,14 @@ public class BitTorrentClient extends Application {
 	public void start(Stage stage) throws Exception 
 	{
 		torrents = Collections.synchronizedList(new ArrayList<>());
-		TorrentCache.addTorrents(torrents);
-		TorrentCache.start(torrents);
+		serializer = new Serializer(torrents);
+		Torrent.setSerializer(serializer);
+		serializer.loadTorrents();
+		serializer.start();
+		// when applications closes one should call serializer.stop()
+		
+		
+		// TODO gui code
 		
 		Stage mainStage = stage;
 		mainStage.setTitle("BitTorrent Client");
@@ -127,7 +134,6 @@ public class BitTorrentClient extends Application {
 		root.getChildren().addAll(torrentName, progressBar, stats);
 		
 		new Timer().schedule(new TimerTask() {
-			long lastDownloaded = 0;	
 			
 			@Override
 			public void run() 
@@ -137,14 +143,12 @@ public class BitTorrentClient extends Application {
 
 					@Override
 					public void run() {
-						long currentDownloaded = tor.getDownloadCount();
 						long downloaded = tor.getVerifiedDownloadCount();
 						double progress = (double)downloaded / tor.getTotalSize();
 						progressBar.setProgress(progress);
-						speedStat.setText(" speed: " + (currentDownloaded - lastDownloaded) / 1024 + "KB/s");
+						speedStat.setText(" speed: " + tor.getDownloadSpeed() / 1024 + "KB/s");
 						downloadedStat.setText("downloaded: " + downloaded/(1<<20) + "." + downloaded/1024%1024*10/1024 + "MB");
 						peersStat.setText("peers: " + tor.getPeersCount());
-						lastDownloaded = currentDownloaded;
 					}
 				});
 				
