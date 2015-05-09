@@ -12,7 +12,10 @@ import java.util.BitSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import btclient.Pieces.PieceFrag;
 
 
 public class Pieces {
@@ -70,11 +73,10 @@ public class Pieces {
 	
 	private Piece[] p;
 	private FragmentSaver fragmentSaver;
-	private ArrayList<Integer> corruptedPieces; 
 	
 	private boolean endGame;
 	
-	private BitSet have;
+	private volatile BitSet have;
 	private BitSet verified;
 	
 	private Random gen;
@@ -105,7 +107,6 @@ public class Pieces {
 			p[i].have = new BitSet(getPieceFragCount(i));
 		}			
 		
-		corruptedPieces = new ArrayList<>();
 		
 		have = new BitSet(fragsCount);
 		verified = new BitSet(piecesCount);
@@ -120,7 +121,6 @@ public class Pieces {
 			if(newHave.size() < fragsCount)
 				throw new IOException();
 			have = newHave;
-			System.err.println("have cardinality " + have.cardinality());
 			
 			BitSet newVerified = (BitSet)in.readObject();
 			if(newVerified.size() < piecesCount)
@@ -170,7 +170,9 @@ public class Pieces {
 		}
 		
 		endGame = false;
-		corruptedPieces.clear();
+	
+		if(piecesDownloadedCount == piecesCount)
+			tor.setCompleted();
 	}
 	
 	private int toFragIndex(int index, int frag) 
@@ -211,6 +213,7 @@ public class Pieces {
 	interface PieceSelector {
 		public void addPiece(int index);
 		public PieceFrag selectPiece(Peer peer);
+		public void movePiecesTo(PieceSelector ps);
 	}
 	
 	public PieceSelector getRandomSelector() 
@@ -251,7 +254,57 @@ public class Pieces {
 				
 				return null;
 			}
+
+			@Override
+			public synchronized void movePiecesTo(PieceSelector ps) 
+			{
+				for(int index : l)
+					ps.addPiece(index);
+			}
 			
+		};
+	}
+	
+	public PieceSelector getStreamingSelector()
+	{
+		return new PieceSelector() {
+			private TreeSet<Integer> set = new TreeSet<>();
+			int currentIndex = -1;
+			
+			@Override
+			public synchronized void addPiece(int index) 
+			{
+				set.add(index);
+			}
+
+			@Override
+			public synchronized PieceFrag selectPiece(Peer peer) 
+			{
+				if(currentIndex != -1) {
+					PieceFrag f = requestPieceFrag(currentIndex);
+					if(f != null)
+						return f;
+				}
+				
+				while(!set.isEmpty()) {
+					int index = set.pollFirst();
+					if(requestPiece(index, peer)) {
+						currentIndex = index;
+						PieceFrag f = requestPieceFrag(currentIndex);
+						if(f != null)
+							return f;
+					}
+				}
+				
+				return null;
+			}
+			
+			@Override
+			public synchronized void movePiecesTo(PieceSelector ps) 
+			{
+				for(int index : set)
+					ps.addPiece(index);
+			}
 		};
 	}
 	
@@ -288,7 +341,7 @@ public class Pieces {
 	}
 	
 	public void readPieceCompleted(int index, byte[] buf)
-	{
+	{		
 		try {
 			MessageDigest md = MessageDigest.getInstance("SHA-1");
 			byte[] calcHash = md.digest(buf);
@@ -309,9 +362,13 @@ public class Pieces {
 						piece.peer.setTrusted();
 				}
 				
+				if(piecesDownloadedCount == piecesCount)
+					tor.setCompleted();
+				
 				return;
 			}
 			
+			tor.addPieceToPeers(index);
 			
 			System.err.println("piece " + index + " failed verification");
 			if(piece.peer != null) {
@@ -328,10 +385,6 @@ public class Pieces {
 				piece.state = PieceState.FREE;
 			}
 			freePiecesCount.incrementAndGet();
-		
-			synchronized(corruptedPieces) {
-				corruptedPieces.add(index);
-			}
 		} catch(NoSuchAlgorithmException e) {
 			
 		}
@@ -356,22 +409,8 @@ public class Pieces {
 				}
 				freePiecesCount.incrementAndGet();
 				
-				synchronized(corruptedPieces) {
-					corruptedPieces.add(f.index);
-				}
+				tor.addPieceToPeers(f.index);
 			}
-		}
-	}
-
-	public void addCorruptedPieces(List<Peer> peers) 
-	{		
-		synchronized(corruptedPieces) {
-			for(int index : corruptedPieces) {
-				for(Peer peer : peers) 
-					peer.addPiece(index);
-			}
-			
-			corruptedPieces.clear();
 		}
 	}
 
@@ -465,11 +504,9 @@ public class Pieces {
 		
 		System.err.println("end-game on");
 		endGame = true;
-		synchronized(corruptedPieces) {
-			for(int i = 0; i < piecesCount; ++i) {
-				if(p[i].state == PieceState.DOWNLOADING)
-					corruptedPieces.add(i);
-			}
+		for(int i = 0; i < piecesCount; ++i) {
+			if(p[i].state == PieceState.DOWNLOADING)
+				tor.addPieceToPeers(i);	
 		}
 	}
 
@@ -493,5 +530,29 @@ public class Pieces {
 	public void setFragmentSaver(FragmentSaver fragmentSaver) 
 	{
 		this.fragmentSaver = fragmentSaver;
+	}
+
+	public boolean isVerified(int index) 
+	{
+		return verified.get(index);
+	}
+
+	public byte[] getFrag(PieceFrag f) 
+	{
+		return fragmentSaver.readFrag(f.index*pieceLength + f.frag*FRAG_LENGTH, getFragLength(f));
+	}
+
+	public boolean validFrag(int index, int begin, int length) 
+	{
+		if(index < 0 || index >= piecesCount)
+			return false;
+		
+		if(begin < 0 || begin >= getPieceLength(index) || begin % FRAG_LENGTH != 0)
+			return false;
+		
+		if(length != FRAG_LENGTH)
+			return false;
+			
+		return true;
 	}
 }

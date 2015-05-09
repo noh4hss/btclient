@@ -177,5 +177,32 @@ public class FragmentSaver {
 				new File(e.pathname).mkdir();
 			}
 		}
+	}
+
+	public byte[] readFrag(long begin, int length) 
+	{
+		byte[] ret = new byte[length];
+		int off = 0;
+		
+		for(FileEntry e : files) {
+			if(begin < e.length) {
+				try(RandomAccessFile file = new RandomAccessFile(e.pathname, "rw")) {
+					file.seek(begin);
+					int len = (int)Math.min(ret.length-off, e.length-begin);
+					file.readFully(ret, off, len);
+					off += len;
+					begin += len;
+				} catch(Exception ee) {
+					ee.printStackTrace();
+				}
+			}
+			
+			if(off == ret.length)
+				break;
+			
+			begin -= e.length;
+		}
+		
+		return ret;
 	}	
 }

@@ -42,7 +42,7 @@ public class Announcer implements TorrentWorker {
 									tr = trackers.get(trackerIndex);
 									++trackerIndex;
 								}
-								System.err.println("announce on " + tr.getURL());
+								
 								tor.addPeers(tr.announceNone());
 							}
 						}
@@ -71,6 +71,7 @@ public class Announcer implements TorrentWorker {
 					tr.announceStopped();
 					tr.announceNone();
 				}
+				
 			}
 			
 		});

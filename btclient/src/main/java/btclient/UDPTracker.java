@@ -88,7 +88,7 @@ public class UDPTracker extends Tracker {
 		DatagramPacket request = new DatagramPacket(buf.array(), 16);
 		DatagramPacket response = new DatagramPacket(new byte[1024], 1024);
 		for(int i = 0; i < 3; ++i) {
-			sock.send(request);
+			sock.send(request); // TODO one time threw NullPointerException
 			try {
 				sock.receive(response);
 			} catch(SocketTimeoutException e) {

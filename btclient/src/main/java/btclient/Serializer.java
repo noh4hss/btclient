@@ -10,6 +10,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.util.BitSet;
 import java.util.List;
 
 public class Serializer implements TorrentWorker {
@@ -41,6 +42,7 @@ public class Serializer implements TorrentWorker {
 					try {
 						Thread.sleep(1000);
 					} catch(InterruptedException e) {
+						Thread.currentThread().interrupt();
 						break;
 					}
 				
@@ -62,6 +64,11 @@ public class Serializer implements TorrentWorker {
 	public void stop() 
 	{
 		mainThread.interrupt();
+		try {
+			mainThread.join();
+		} catch(InterruptedException e) {
+			
+		}
 	}
 	
 
@@ -96,7 +103,7 @@ public class Serializer implements TorrentWorker {
 		File torrentDirectory = new File(torrentsDirectory + File.separator + tor.getInfoHashStr());
 		if(!torrentDirectory.mkdir())
 			return;
-		
+				
 		try {
 			File torrentFile = new File(torrentDirectory + File.separator + "name.torrent");
 			torrentFile.createNewFile();
@@ -118,8 +125,13 @@ public class Serializer implements TorrentWorker {
 		File dataFile = new File(torrentDirectory.getPath() + File.separator + "bindata");
 		try(ObjectOutputStream out = new ObjectOutputStream(new BufferedOutputStream(new FileOutputStream(dataFile)))) {
 			tor.save(out);
+			out.flush();
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
+	}
+
+	public void remove(Torrent tor) 
+	{	
 	}
 }

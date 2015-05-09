@@ -2,10 +2,7 @@ package btclient;
 
 
 
-import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.Closeable;
-import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -36,7 +33,8 @@ import java.util.concurrent.atomic.AtomicLong;
 public class Torrent {
 	private enum State {
 		IDLE,
-		RUNNING	
+		RUNNING,
+		SEEDING
 	}
 	
 	private List<Tracker> trackers;
@@ -53,13 +51,13 @@ public class Torrent {
 	
 	private long totalSize;
 	private AtomicLong downloadCount;
-	private long uploadCount;
+	private AtomicLong uploadCount;
 	
 	private ServerSocket listenSock;
 	private int listenPort;
 	
 	// counting peers that received handshake
-	private int maxPeers = 50;
+	private int maxPeers = 80;
 	private AtomicInteger peersCount;
 	
 	private List<Peer> peers;
@@ -79,6 +77,11 @@ public class Torrent {
 	private FragmentSaver fragmentSaver;
 
 	private static Serializer serializer;
+	
+	private volatile boolean streaming;
+	private volatile boolean completed;
+	
+	private boolean uploadOn = true;
 	
 	public Torrent(File file) throws IOException
 	{
@@ -129,13 +132,17 @@ public class Torrent {
 			out.write((x & 0xFF000000) >>> 24);
 			System.arraycopy(out.toByteArray(), 0, peerId, 0, out.size());
 			
-			uploadCount = 0;
+			uploadCount = new AtomicLong(0);
 			downloadCount = new AtomicLong(0);
 						
 			state = State.IDLE;
 			
-		
 			serializer.createFiles(this, b);
+		
+			streaming = false;
+			completed = false;
+			
+			peers = Collections.synchronizedList(new LinkedList<Peer>());
 		} catch(Exception e) {
 			throw new IOException("invalid file format");
 		}
@@ -196,13 +203,19 @@ public class Torrent {
 		if(state != State.IDLE)
 			return true;
 		
+		if(completed) {
+			if(!uploadOn)
+				return false;
+			state = State.SEEDING;
+		} else {
+			state = State.RUNNING;
+		}
 		
-		
-		if(!initListenSocket())
+		if(!initListenSocket()) {
+			state = State.IDLE;
 			return false;
-		state = State.RUNNING;
+		}
 		
-		peers = Collections.synchronizedList(new LinkedList<Peer>());
 		peersAddresses = Collections.synchronizedSet(new HashSet<InetSocketAddress>());
 		candidatePeers = Collections.synchronizedList(new LinkedList<InetSocketAddress>());
 		blacklist = Collections.synchronizedSet(new HashSet<InetAddress>());
@@ -224,9 +237,10 @@ public class Torrent {
 
 	public void stop()
 	{
+		if(state == State.IDLE)
+			return;
+		
 		state = State.IDLE;
-		
-		
 		
 		announcer.stop();
 		
@@ -241,7 +255,7 @@ public class Torrent {
 		
 		synchronized(peers) {
 			for(Peer peer : peers)
-				peer.forceClose();
+				peer.closeConnection();
 			peers.clear();
 			peersCount.set(0);
 		}
@@ -292,6 +306,8 @@ public class Torrent {
 						peersAddresses.add(addr);
 						
 						Peer peer = new Peer(Torrent.this, addr);
+						if(streaming)
+							peer.enableStreaming();
 						synchronized(peers) {
 							peers.add(peer);
 						}
@@ -349,8 +365,6 @@ public class Torrent {
 									peersCount.decrementAndGet();
 								}
 							}
-							
-							pieces.addCorruptedPieces(peers);
 						}
 					}
 				}
@@ -451,7 +465,7 @@ public class Torrent {
 		synchronized(peers) {
 			for(Peer peer : peers) {
 				if(peer.getInetAddress().equals(addr))
-					peer.forceClose();
+					peer.closeConnection();
 			}
 		}
 		blacklist.add(addr);
@@ -578,7 +592,12 @@ public class Torrent {
 	
 	public long getUploadCount()
 	{
-		return uploadCount;
+		return uploadCount.get();
+	}
+	
+	public void increaseUploadCount(long delta)
+	{
+		uploadCount.addAndGet(delta);
 	}
 	
 	public long getLeftCount()
@@ -596,10 +615,6 @@ public class Torrent {
 		return uploadSpeed;
 	}
 	
-	public boolean isRunning()
-	{
-		return state != State.IDLE;
-	}
 
 	public String getInfoHashStr() 
 	{
@@ -614,5 +629,84 @@ public class Torrent {
 	public static void setSerializer(Serializer serializer)
 	{
 		Torrent.serializer = serializer;
+	}
+	
+	public void enableStreaming()
+	{
+		if(streaming)
+			return;
+		streaming = true;
+		
+		synchronized(peers) {
+			for(Peer peer : peers)
+				peer.enableStreaming();
+		}
+	}
+	
+	public void disableStreaming()
+	{	
+		if(!streaming)
+			return;
+		streaming = false;
+		
+		synchronized(peers) {
+			for(Peer peer : peers)
+				peer.disableStreaming();
+		}
+	}
+
+	public void addPieceToPeers(int index) 
+	{
+		synchronized(peers) {
+			for(Peer peer : peers)
+				peer.addPiece(index);
+		}
+	}
+	
+	public void remove()
+	{
+		serializer.remove(this);
+	}
+	
+	public void addVerifiedPieceToPeers(int index)
+	{
+		synchronized(peers) {
+			for(Peer peer : peers) {
+				peer.addVerifiedPiece(index);
+			}
+		}
+	}
+	
+	public boolean isIdle()
+	{
+		return state == State.IDLE;
+	}
+	
+	public boolean isRunning()
+	{
+		return state == State.RUNNING;
+	}
+	
+	public boolean isSeeding()
+	{
+		return state == State.SEEDING;
+	}
+
+	public boolean isCompleted()
+	{
+		return completed;
+	}
+	
+	public void setCompleted() 
+	{
+		completed = true;
+		if(state != State.RUNNING)
+			return;
+		
+		if(!uploadOn) {
+			stop();
+		} else {
+			state = State.SEEDING;
+		}
 	}
 }

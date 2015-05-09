@@ -12,7 +12,14 @@ import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
+import java.util.Collections;
 import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+
+import com.sun.xml.internal.ws.assembler.jaxws.ValidationTubeFactory;
 
 public class Peer {
 	private Torrent tor;
@@ -20,7 +27,7 @@ public class Peer {
 	
 	private Pieces pieces;
 	private int piecesCount;
-	private Pieces.PieceSelector pieceSelector;
+	private volatile Pieces.PieceSelector pieceSelector;
 	
 	private BitSet bs;
 	
@@ -37,15 +44,22 @@ public class Peer {
 	private DataInputStream in;
 	private DataOutputStream out;
 	
-	private ArrayList<Pieces.PieceFrag> requestedFrags;
-	private ArrayList<Pieces.PieceFrag> canceledRequests; 
+	private List<Pieces.PieceFrag> requestedFrags;
+	private List<Pieces.PieceFrag> canceledRequests; 
 	
 	private boolean trusted;
 	
+	private boolean streaming;
+	
+	private Thread sender;
+	
+	private Queue<Pieces.PieceFrag> peerRequestedFrags;
+	
 	private static final int CONNECT_TIMEOUT_MS = 1000;
-
+	private static final int HANDSHAKE_TIMEOUT = 3000;
+	
 	// TODO probably should experiment with changing this value
-	public static final int MAX_REQUESTED_FRAGS = 5;
+	public static final int MAX_REQUESTED_FRAGS = 6;
 	
 	private Peer(Torrent tor)
 	{
@@ -63,12 +77,14 @@ public class Peer {
 		peerInterested = false;
 		
 		
-		requestedFrags = new ArrayList<>(MAX_REQUESTED_FRAGS);
-		canceledRequests = new ArrayList<>(2*MAX_REQUESTED_FRAGS);
+		requestedFrags = Collections.synchronizedList(new ArrayList<Pieces.PieceFrag>(MAX_REQUESTED_FRAGS));
+		canceledRequests = Collections.synchronizedList(new ArrayList<Pieces.PieceFrag>(2*MAX_REQUESTED_FRAGS));
+		peerRequestedFrags = new ConcurrentLinkedQueue<>();
 		
 		closed = false;
 		
 		trusted = false;
+		streaming = false;
 	}
 	
 	public Peer(Torrent tor, InetSocketAddress addr)
@@ -109,22 +125,22 @@ public class Peer {
 						receiveHandshake();
 						sendHandshake();
 					}
-						
+					
+					sender = new Thread(new Runnable() {
+
+						@Override
+						public void run() 
+						{
+							sendMessages();
+						}
+					});
+					sender.start();
 					receiveMessages();
 				
 				} catch(IOException e) {
 					//e.printStackTrace();
 					pieces.pieceReceiveFailed(requestedFrags);
-					
-					closed = true;
-					
-					if(sock != null) {
-						try {
-							sock.close();
-						} catch(IOException ee) {
-							
-						}
-					}
+					closeConnection();
 				}
 			}
 			
@@ -149,6 +165,7 @@ public class Peer {
 		final int HANDSHAKE_LEN = 49+19;
 		byte[] handshake = new byte[HANDSHAKE_LEN];
 		int off = 0;
+		sock.setSoTimeout(HANDSHAKE_TIMEOUT);
 		
 		while(off < handshake.length) {
 			int ret = in.read(handshake, off, handshake.length-off);
@@ -156,9 +173,12 @@ public class Peer {
 				throw new IOException("receiveHandshake: stream ended");
 			off += ret;
 		}
+		
+		sock.setSoTimeout(0);
 						
 		if(!Arrays.equals(tor.getInfoHash(), Arrays.copyOfRange(handshake, 28, 48))) 
 			throw new IOException("invalid info hash");
+		
 	}
 
 	// can we somehow use with enum switch in receiveMessage
@@ -176,21 +196,25 @@ public class Peer {
 	
 	private void receiveMessages() throws IOException
 	{		
-		while(true) {
-			if(requestedFrags.size() < 3)
-				sendRequests();
-			
-			if(pieces.isEndGameOn())
-				sendCancels();
-			
+		int timeoutsCount = 0;
+		
+		while(!closed) {
 			int len;
 			try {
 				sock.setSoTimeout(1000);
 				len = in.readInt();
+				sock.setSoTimeout(0);
 			} catch(SocketTimeoutException e) {
+				if(!requestedFrags.isEmpty()) {
+					++timeoutsCount;
+					if(streaming && timeoutsCount >= 2) {
+						throw new IOException("unrensponsive peer in streaming");
+					}
+				} else {
+					timeoutsCount = 1;
+				}
 				continue;
 			}
-			sock.setSoTimeout(0);
 			
 			if(len < 0)
 				throw new IOException("message with negative length");
@@ -247,22 +271,27 @@ public class Peer {
 				}
 				break;
 			case messageRequest:
+			{	
 				if(len != 13)
 					throw new IOException("request message invalid length");
-				{
 				int index = in.readInt();
 				int begin = in.readInt();
 				int length = in.readInt();
+				if(pieces.validFrag(index, begin, length)) {
+					peerRequestedFrags.add(new Pieces.PieceFrag(index, begin/Pieces.FRAG_LENGTH));
 				}
 				break;
+			}
 			case messageCancel:
 				if(len != 13)
 					throw new IOException();
 				int index = in.readInt();
 				int begin = in.readInt();
 				int length = in.readInt();
-				break;
-				
+				if(pieces.validFrag(index, begin, length)) {
+
+				}
+				break;	
 			default:
 				System.err.println("received message with uknown id=" + id);
 				// we just ignore this message
@@ -271,6 +300,74 @@ public class Peer {
 				break;
 			}
 		}
+	}
+	
+	private void sendMessages() 
+	{
+		try {
+			if(pieces.getPiecesVerifiedCount() > 0)
+				sendBitfield();
+			
+			sendUnchoke();
+			
+			while(!closed) {
+				if(tor.isSeeding() && isSeeder()) {
+					closeConnection();
+					return;
+				}
+				
+				if(requestedFrags.size() < MAX_REQUESTED_FRAGS) {
+					sendRequests();
+				} else {
+					try {
+						Thread.sleep(100);
+					} catch (InterruptedException e) {
+						e.printStackTrace();
+					}
+				}
+				
+				if(pieces.isEndGameOn())
+					sendCancels();
+			
+				if(!verifiedPieces.isEmpty()) {
+					int index = verifiedPieces.poll();
+					sendHaveMsg(index);
+				}
+				
+				Pieces.PieceFrag f = peerRequestedFrags.poll();
+				if(f == null)
+					continue;
+				
+				byte[] b = pieces.getFrag(f);	
+				out.writeInt(9 + b.length);
+				out.writeByte(messagePiece);
+				out.writeInt(f.index);
+				out.writeInt(f.frag * Pieces.FRAG_LENGTH);
+				out.write(b);
+				
+				tor.increaseUploadCount(b.length);
+			}
+		} catch(IOException e) {
+			e.printStackTrace();
+			closeConnection();
+		}
+	}
+	
+	private void sendHaveMsg(int index) throws IOException
+	{
+		out.writeInt(5);
+		out.writeByte(messageHave);
+		out.writeInt(index);
+	}
+	
+	private void sendUnchoke() throws IOException
+	{
+		if(!amChoking)
+			return;
+		amChoking = false;
+		
+		out.writeInt(1);
+		out.writeByte(messageUnchoke);
 	}
 	
 	private boolean bitfieldReceived = false;
@@ -309,6 +406,21 @@ public class Peer {
 			}
 		}
 	}
+	
+	private void sendBitfield() throws IOException
+	{
+		int count = pieces.getCount();
+		byte[] bitfield = new byte[(count+7)/8];
+		for(int i = 0; i < pieces.getCount(); ++i) {
+			if(pieces.isVerified(i))
+				bitfield[i/8] |= (1 << (7-(i&7)));
+		}
+		
+		out.writeInt(1 + bitfield.length);
+		out.writeByte(messageBitfield);
+		out.write(bitfield);
+		out.flush();
+	}
 
 	private void receivePiece(int len) throws IOException
 	{
@@ -331,16 +443,30 @@ public class Peer {
 		
 		byte[] block = new byte[length];
 		int off = 0;
+		sock.setSoTimeout(1000);
 		
+		long startTime = System.currentTimeMillis();
 		while(off < length) {
-			int ret = in.read(block, off, length-off);
-			if(ret == -1)
-				throw new IOException("receivePiece: stream ended");
-			off += ret;
-			if(!canceledFrag)
-				tor.increaseDownloaded(ret);
+			try {
+				int ret = in.read(block, off, length-off);
+				if(ret == -1)
+					throw new IOException("receivePiece: stream ended");
+				off += ret;
+				if(!canceledFrag)
+					tor.increaseDownloaded(ret);
+			} catch(SocketTimeoutException e) {
+				if(streaming) {
+					throw new IOException("unrensponsive peer in streaming");
+				}
+			}
+			
+			if(streaming) {
+				if(System.currentTimeMillis() - startTime >= 1000)
+					throw new IOException("unrensponsive peer in streaming");
+			}
 		}
 	
+		sock.setSoTimeout(0);
 		//System.err.println("received piece fragment " + index + " " + begin);
 		pieces.receivedFragment(f, block);
 	}
@@ -358,15 +484,15 @@ public class Peer {
 			if(f == null)
 				break;
 			
-			out.writeInt(13);  							// length
-			out.write(6);	   							// request message id
+			out.writeInt(13);  					
+			out.write(messageRequest);	   
 			out.writeInt(f.index);
 			out.writeInt(f.frag * Pieces.FRAG_LENGTH);
 			out.writeInt(pieces.getFragLength(f));
 			
 			requestedFrags.add(f);
 		}
-		
+				
 		out.flush();
 	}
 	
@@ -413,10 +539,12 @@ public class Peer {
 			pieceSelector.addPiece(index);
 	}
 
-	void forceClose()
+	void closeConnection()
 	{
+		closed = true;
 		try {
-			sock.close();
+			if(sock != null)
+				sock.close();
 		} catch(IOException e) {
 			
 		}
@@ -430,5 +558,40 @@ public class Peer {
 	public void setTrusted()
 	{
 		trusted = true;
+	}
+
+	public void enableStreaming() 
+	{
+		if(streaming)
+			return;
+		streaming = true;
+		
+		Pieces.PieceSelector newPieceSelector = pieces.getStreamingSelector();
+		pieceSelector.movePiecesTo(newPieceSelector);
+		pieceSelector = newPieceSelector;
+	}
+	
+	public void disableStreaming() 
+	{
+		if(!streaming)
+			return;
+		streaming = false;
+		
+		Pieces.PieceSelector newPieceSelector = pieces.getRandomSelector();
+		pieceSelector.movePiecesTo(newPieceSelector);
+		pieceSelector = newPieceSelector;
+	}
+	
+	private Queue<Integer> verifiedPieces = new ConcurrentLinkedQueue<>();
+	
+	public void addVerifiedPiece(int index) 
+	{
+		if(!bs.get(index))
+			verifiedPieces.add(index);
+	}
+	
+	public boolean isSeeder()
+	{
+		return bs.cardinality() == pieces.getCount();
 	}
 }

@@ -38,7 +38,7 @@ public class BitTorrentClient extends Application {
 	@Override
 	public void start(Stage stage) throws Exception 
 	{
-		torrents = Collections.synchronizedList(new ArrayList<>());
+		torrents = Collections.synchronizedList(new ArrayList<Torrent>());
 		serializer = new Serializer(torrents);
 		Torrent.setSerializer(serializer);
 		serializer.loadTorrents();
@@ -83,8 +83,9 @@ public class BitTorrentClient extends Application {
 		
 		mainStage.show();
 		
-		for(Torrent tor : torrents)
+		for(Torrent tor : torrents) {
 			addTorrent(tor);
+		}
 	}
 	
 	EventHandler<ActionEvent> openTorrent = new EventHandler<ActionEvent>() {
@@ -114,7 +115,7 @@ public class BitTorrentClient extends Application {
 		}
 	};
 	
-	private void addTorrent(Torrent tor)
+	private void addTorrent(final Torrent tor)
 	{
 		if(!tor.start()) {
 			System.err.println("could not start torrent");
