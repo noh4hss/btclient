@@ -1,6 +1,5 @@
 package btclient;
 
-import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -15,7 +14,6 @@ import java.util.Random;
 import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import btclient.Pieces.PieceFrag;
 
 
 public class Pieces {
@@ -52,6 +50,26 @@ public class Pieces {
 		{
 			PieceFrag f = (PieceFrag)o;
 			return index == f.index && frag == f.frag;
+		}
+	}
+	
+	public static class PeerFrag {
+		int index;
+		int begin;
+		int length;
+		
+		public PeerFrag(int index, int begin, int length)
+		{
+			this.index = index;
+			this.begin = begin;
+			this.length = length;
+		}
+		
+		@Override
+		public boolean equals(Object o)
+		{
+			PeerFrag f = (PeerFrag)o;
+			return index == f.index && begin == f.begin && length == f.length;
 		}
 	}
 	
@@ -128,7 +146,7 @@ public class Pieces {
 			verified = newVerified;
 			
 			return true;
-		} catch (ClassNotFoundException | IOException e) {
+		} catch (ClassNotFoundException | ClassCastException | IOException e) {
 			e.printStackTrace();
 			return false;
 		}
@@ -356,6 +374,7 @@ public class Pieces {
 								
 				++piecesDownloadedCount;
 				verifiedDownloadCount += getPieceLength(index);
+				tor.addVerifiedPieceToPeers(index);
 				
 				if(piece.peer != null) {
 					if(!piece.peer.isTrusted())
@@ -537,22 +556,22 @@ public class Pieces {
 		return verified.get(index);
 	}
 
-	public byte[] getFrag(PieceFrag f) 
+	public byte[] getFrag(PeerFrag f) 
 	{
-		return fragmentSaver.readFrag(f.index*pieceLength + f.frag*FRAG_LENGTH, getFragLength(f));
+		return fragmentSaver.readFrag((long)f.index*pieceLength + f.begin, f.length);
 	}
 
-	public boolean validFrag(int index, int begin, int length) 
+	public boolean validFragToSend(int index, int begin, int length) 
 	{
-		if(index < 0 || index >= piecesCount)
+		if(index < 0 || index >= piecesCount || !verified.get(index))
 			return false;
 		
-		if(begin < 0 || begin >= getPieceLength(index) || begin % FRAG_LENGTH != 0)
+		if(length <= 0 || length > FRAG_LENGTH)
 			return false;
 		
-		if(length != FRAG_LENGTH)
+		if(begin < 0 || begin+length > getPieceLength(index))
 			return false;
-			
+		
 		return true;
 	}
 }

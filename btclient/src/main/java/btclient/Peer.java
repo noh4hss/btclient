@@ -36,7 +36,7 @@ public class Peer {
 	private boolean peerChoking;
 	private boolean peerInterested;
 	
-	private boolean closed;
+	private volatile boolean closed;
 	
 	private boolean acceptedSocket; // created through listenSocket.accept()
 	
@@ -53,7 +53,7 @@ public class Peer {
 	
 	private Thread sender;
 	
-	private Queue<Pieces.PieceFrag> peerRequestedFrags;
+	private List<Pieces.PeerFrag> peerRequestedFrags;
 	
 	private static final int CONNECT_TIMEOUT_MS = 1000;
 	private static final int HANDSHAKE_TIMEOUT = 3000;
@@ -79,7 +79,7 @@ public class Peer {
 		
 		requestedFrags = Collections.synchronizedList(new ArrayList<Pieces.PieceFrag>(MAX_REQUESTED_FRAGS));
 		canceledRequests = Collections.synchronizedList(new ArrayList<Pieces.PieceFrag>(2*MAX_REQUESTED_FRAGS));
-		peerRequestedFrags = new ConcurrentLinkedQueue<>();
+		peerRequestedFrags = Collections.synchronizedList(new ArrayList<Pieces.PeerFrag>());
 		
 		closed = false;
 		
@@ -109,7 +109,9 @@ public class Peer {
 			@Override
 			public void run() 
 			{
-				try {
+				boolean inCount = false;
+				
+				try {					
 					if(!acceptedSocket) {
 						sock = null;
 						sock = new Socket();
@@ -126,6 +128,9 @@ public class Peer {
 						sendHandshake();
 					}
 					
+					inCount = true;
+					tor.incrementPeersCount();
+					
 					sender = new Thread(new Runnable() {
 
 						@Override
@@ -139,8 +144,13 @@ public class Peer {
 				
 				} catch(IOException e) {
 					//e.printStackTrace();
-					pieces.pieceReceiveFailed(requestedFrags);
 					closeConnection();
+					synchronized(requestedFrags) {
+						pieces.pieceReceiveFailed(requestedFrags);
+					}
+				} finally {
+					if(inCount)
+						tor.decrementPeersCount();
 				}
 			}
 			
@@ -272,13 +282,14 @@ public class Peer {
 				break;
 			case messageRequest:
 			{	
+				System.err.println("received request");
 				if(len != 13)
 					throw new IOException("request message invalid length");
 				int index = in.readInt();
 				int begin = in.readInt();
 				int length = in.readInt();
-				if(pieces.validFrag(index, begin, length)) {
-					peerRequestedFrags.add(new Pieces.PieceFrag(index, begin/Pieces.FRAG_LENGTH));
+				if(pieces.validFragToSend(index, begin, length)) {
+					peerRequestedFrags.add(new Pieces.PeerFrag(index, begin, length));
 				}
 				break;
 			}
@@ -288,9 +299,7 @@ public class Peer {
 				int index = in.readInt();
 				int begin = in.readInt();
 				int length = in.readInt();
-				if(pieces.validFrag(index, begin, length)) {
-
-				}
+				peerRequestedFrags.remove(new Pieces.PeerFrag(index, begin, length));
 				break;	
 			default:
 				System.err.println("received message with uknown id=" + id);
@@ -334,7 +343,11 @@ public class Peer {
 					sendHaveMsg(index);
 				}
 				
-				Pieces.PieceFrag f = peerRequestedFrags.poll();
+				Pieces.PeerFrag f = null;
+				try {
+					f = peerRequestedFrags.remove(0);
+				} catch(IndexOutOfBoundsException e) {
+				}
 				if(f == null)
 					continue;
 				
@@ -342,10 +355,11 @@ public class Peer {
 				out.writeInt(9 + b.length);
 				out.writeByte(messagePiece);
 				out.writeInt(f.index);
-				out.writeInt(f.frag * Pieces.FRAG_LENGTH);
+				out.writeInt(f.begin);
 				out.write(b);
 				
 				tor.increaseUploadCount(b.length);
+				System.err.println("sent fragment " + f.index + " " + f.begin);
 			}
 		} catch(IOException e) {
 			e.printStackTrace();

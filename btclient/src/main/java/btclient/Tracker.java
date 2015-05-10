@@ -1,7 +1,6 @@
 package btclient;
 
 import java.net.InetSocketAddress;
-import java.util.Date;
 import java.util.List;
 
 public abstract class Tracker {

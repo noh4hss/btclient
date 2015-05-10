@@ -311,7 +311,6 @@ public class Torrent {
 						synchronized(peers) {
 							peers.add(peer);
 						}
-						peersCount.incrementAndGet();
 						peer.start();
 					}
 				}
@@ -352,7 +351,7 @@ public class Torrent {
 							return;
 						}
 						
-						if(!pieces.isEndGameOn() && pieces.getFreePiecesCount() == 0) 
+						if(!pieces.isEndGameOn() && pieces.getFreePiecesCount() == 0 && !completed) 
 							pieces.startEndGame();
 						
 						synchronized(peers) {
@@ -362,7 +361,6 @@ public class Torrent {
 								if(peer.isClosed()) {
 									it.remove();
 									peersAddresses.remove(peer.getAddress());
-									peersCount.decrementAndGet();
 								}
 							}
 						}
@@ -456,7 +454,6 @@ public class Torrent {
 		if(newPeers == null)
 			return;
 		
-		System.err.println("got list of " + newPeers.size() + " peers");
 		candidatePeers.addAll(newPeers);
 	}
 
@@ -708,5 +705,20 @@ public class Torrent {
 		} else {
 			state = State.SEEDING;
 		}
+	}
+
+	public void incrementPeersCount() 
+	{
+		peersCount.incrementAndGet();
+	}
+
+	public void decrementPeersCount() 
+	{
+		peersCount.decrementAndGet();
+	}
+
+	public boolean isUploadOn()
+	{
+		return uploadOn;
 	}
 }
