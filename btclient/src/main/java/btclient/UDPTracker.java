@@ -21,7 +21,10 @@ public class UDPTracker extends Tracker {
 	private int port;
 	private DatagramSocket sock;
 	
-	UDPTracker(Torrent tor, String url)
+	private static final int MAX_TRIES = 3;
+	private static final int RECEIVE_TIMEOUT = 5000;
+	
+	public UDPTracker(Torrent tor, String url)
 	{
 		super(tor, url);
 		try {
@@ -81,12 +84,12 @@ public class UDPTracker extends Tracker {
 							   					.putInt(requestAction)
 							   					.putInt(requestTransactionId);
 		
-		sock.setSoTimeout(2000);
 		DatagramPacket request = new DatagramPacket(buf.array(), 16);
 		DatagramPacket response = new DatagramPacket(new byte[1024], 1024);
-		for(int i = 0; i < 3; ++i) {
-			sock.send(request); // TODO one time threw NullPointerException
+		for(int i = 0; i < MAX_TRIES; ++i) {
+			sock.send(request);
 			try {
+				sock.setSoTimeout(RECEIVE_TIMEOUT);
 				sock.receive(response);
 			} catch(SocketTimeoutException e) {
 				continue;
@@ -135,12 +138,12 @@ public class UDPTracker extends Tracker {
 		buf.putShort((short)tor.getListenPort());
 		buf.putShort((short)0);				// extensions;
 	
-		sock.setSoTimeout(4000);
 		DatagramPacket request = new DatagramPacket(buf.array(), buf.position());
 		DatagramPacket response = new DatagramPacket(new byte[1024], 1024);
-		for(int i = 0; i < 3; ++i) {
+		for(int i = 0; i < MAX_TRIES; ++i) {
 			sock.send(request);
 			try {
+				sock.setSoTimeout(RECEIVE_TIMEOUT);
 				sock.receive(response);
 			} catch(SocketTimeoutException e) {
 				continue;
@@ -179,4 +182,13 @@ public class UDPTracker extends Tracker {
 		
 		throw new IOException("getPeerList() timed out");
 	}
+
+	@Override
+	public void endAnnounce() 
+	{
+		if(sock != null) {
+			sock.close();
+		}
+	}
+	
 }

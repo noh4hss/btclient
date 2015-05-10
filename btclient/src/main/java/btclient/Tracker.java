@@ -3,22 +3,20 @@ package btclient;
 import java.net.InetSocketAddress;
 import java.util.List;
 
-public abstract class Tracker {
-	protected Torrent tor;
-	protected String url;
-	
+public abstract class Tracker {	
 	private boolean startedSent;
 	private long nextAnnounceTime;
 	
 	private long downloadedStart;
 	private long uploadedStart;
 	
+	protected Torrent tor;
+	protected String url;
+	
 	protected Tracker(Torrent tor, String url) 
 	{
 		this.tor = tor;
 		this.url = url;
-		startedSent = false;
-		currentEvent = Event.NONE;
 	}
 	
 	public static Tracker createTracker(Torrent tor, String url) 
@@ -29,7 +27,6 @@ public abstract class Tracker {
 			return new HTTPTracker(tor, url);
 		throw new IllegalArgumentException("could not parse tracker url: " + url);
 	}
-	
 	
 	
 	private enum Event {
@@ -58,47 +55,59 @@ public abstract class Tracker {
 		return currentEvent.getValue();
 	}
 	
-	
-	
-	private void announceSuccessful()
+	public void reset()
 	{
-		if(currentEvent == Event.STARTED) {
-			startedSent = true;
-			downloadedStart = tor.getDownloadCount();
-			uploadedStart = tor.getUploadCount();
-		}
-		currentEvent = Event.NONE;
+		startedSent = false;
+		currentEvent = Event.STARTED;
 	}
 	
 	public abstract List<InetSocketAddress> announce();
 	
+	public abstract void endAnnounce();
 	
-	public List<InetSocketAddress> announceNone()
+	public synchronized List<InetSocketAddress> announceNone()
 	{
 		if(currentEvent == Event.NONE && System.currentTimeMillis() < nextAnnounceTime)
 			return null;
 		
 		List<InetSocketAddress> ret = announce();
-		if(ret != null)
-			announceSuccessful();
+		if(ret != null) {
+			if(currentEvent == Event.STARTED) {
+				startedSent = true;
+				downloadedStart = tor.getDownloadCount();
+				uploadedStart = tor.getUploadCount();
+			}
+			currentEvent = Event.NONE;
+		}
+		return ret;
+	}
+		
+	public synchronized List<InetSocketAddress> announceStarted()
+	{
+		currentEvent = Event.STARTED;
+		List<InetSocketAddress> ret = announce();
+		if(ret != null) {
+			startedSent = true;
+			downloadedStart = tor.getDownloadCount();
+			uploadedStart = tor.getUploadCount();
+			currentEvent = Event.NONE;
+		}
 		return ret;
 	}
 	
-	public void announceCompleted()
+	public synchronized void announceStopped()
 	{
-		if(currentEvent != Event.STARTED)
-			currentEvent = Event.COMPLETED;
+		if(currentEvent == Event.STARTED)
+			return;
+		currentEvent = Event.STOPPED;
+		announce();
 	}
 	
-	public void announceStarted()
+	public synchronized void announceCompleted()
 	{
-		currentEvent = Event.STARTED;
-	}
-	
-	public void announceStopped()
-	{
-		if(currentEvent != Event.STARTED)
-			currentEvent = Event.STOPPED;
+		if(currentEvent == Event.STARTED || currentEvent == Event.STOPPED)
+			return;
+		currentEvent = Event.COMPLETED;
 	}
 	
 	protected long getDownloaded()
@@ -130,6 +139,7 @@ public abstract class Tracker {
 	{
 		return url;
 	}
+	
 }
 
 

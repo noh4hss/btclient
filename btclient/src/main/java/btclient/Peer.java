@@ -14,12 +14,10 @@ import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Collections;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
-import com.sun.xml.internal.ws.assembler.jaxws.ValidationTubeFactory;
 
 public class Peer {
 	private Torrent tor;
@@ -191,8 +189,7 @@ public class Peer {
 		
 	}
 
-	// can we somehow use with enum switch in receiveMessage
-	// or java sucks as usual ?
+
 	private static final int messageChoke = 0;
 	private static final int messageUnchoke = 1;
 	private static final int messageInterested = 2;
@@ -235,9 +232,7 @@ public class Peer {
 			}
 			
 			int id = in.read();
-			
-			//System.err.println("received message with id " + id);
-			
+						
 			if(id == messageBitfield) { 
 				receiveBitfield(len-1);
 				continue;
@@ -282,7 +277,6 @@ public class Peer {
 				break;
 			case messageRequest:
 			{	
-				System.err.println("received request");
 				if(len != 13)
 					throw new IOException("request message invalid length");
 				int index = in.readInt();
@@ -328,10 +322,11 @@ public class Peer {
 				if(requestedFrags.size() < MAX_REQUESTED_FRAGS) {
 					sendRequests();
 				} else {
+					Thread.interrupted();
 					try {
 						Thread.sleep(100);
 					} catch (InterruptedException e) {
-						e.printStackTrace();
+						continue;
 					}
 				}
 				
@@ -359,10 +354,8 @@ public class Peer {
 				out.write(b);
 				
 				tor.increaseUploadCount(b.length);
-				System.err.println("sent fragment " + f.index + " " + f.begin);
 			}
 		} catch(IOException e) {
-			e.printStackTrace();
 			closeConnection();
 		}
 	}
@@ -483,6 +476,7 @@ public class Peer {
 		sock.setSoTimeout(0);
 		//System.err.println("received piece fragment " + index + " " + begin);
 		pieces.receivedFragment(f, block);
+		sender.interrupt();
 	}
 	
 	private void sendRequests() throws IOException

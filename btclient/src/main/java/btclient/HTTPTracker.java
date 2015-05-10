@@ -17,4 +17,11 @@ public class HTTPTracker extends Tracker {
 		// TODO Auto-generated method stub
 		return null;
 	}
+
+	@Override
+	public void endAnnounce() 
+	{
+		// TODO Auto-generated method stub
+		
+	}
 }
