@@ -257,7 +257,6 @@ public class Torrent {
 			for(Peer peer : peers)
 				peer.closeConnection();
 			peers.clear();
-			peersCount.set(0);
 		}
 		
 		fragmentSaver.stop();
@@ -290,7 +289,7 @@ public class Torrent {
 				{
 					while(!Thread.currentThread().isInterrupted()) {
 						
-						if(candidatePeers.isEmpty() || peersCount.get() >= maxPeers) {
+						if(candidatePeers.isEmpty() || peers.size() >= maxPeers) {
 							try {
 								Thread.sleep(1000);
 							} catch(InterruptedException e) {
@@ -525,6 +524,8 @@ public class Torrent {
 			{
 				long currentDownloaded = getDownloadCount();
 				long currentUploaded = getUploadCount();
+				
+				//System.err.println(currentUploaded - lastUploaded);
 				
 				downloadSpeed = currentDownloaded - lastDownloaded;
 				uploadSpeed = currentUploaded - lastUploaded;
