@@ -47,13 +47,13 @@ public class Controller {
 	void initialize() {
 		configureTable();
 
-		torrents = Collections.synchronizedList(new ArrayList<>());
+		torrents = Collections.synchronizedList(new ArrayList<Torrent>());
 		serializer = new Serializer();
 		Torrent.setSerializer(serializer);
 		serializer.loadTorrents(torrents);
 		serializer.start();
 		for (Torrent tor : torrents) {
-			addTorrent(tor);
+			data.add(new entryTorrent(data.size() + 1, tor.getName(), 0, "0.0MB", 0, 0, 0, tor));
 		}
 
 		new Timer().schedule(new TimerTask() {
@@ -70,12 +70,13 @@ public class Controller {
 							Torrent tor = myEntry.tor;
 							long downloaded = tor.getVerifiedDownloadCount();
 							//myEntry.setId();
-							myEntry.setProgress((downloaded / tor.getTotalSize())); //double
+							myEntry.setProgress((100 * downloaded / tor.getTotalSize())); //double
 							myEntry.setName(tor.getName());
 							myEntry.setSpeed((int) (tor.getDownloadSpeed() / 1024)); //Kb/s
-							myEntry.setUploadSpeed((int) (tor.getUploadSpeed() / 1024)); //Kb/s
+							//myEntry.setUploadSpeed((int) (tor.getUploadSpeed())); //Kb/s nie wiem czemu nie dziala
 							myEntry.setDownloaded(downloaded / (1 << 20) + "." + downloaded / 1024 % 1024 * 10 / 1024 + "MB");
 							myEntry.setPeers(tor.getPeersCount());
+							//System.out.println(tor.getUploadCount());
 						}
 					}
 				});
@@ -85,13 +86,13 @@ public class Controller {
 	}
 
 	private void configureTable() {
-		colId.setCellValueFactory(new PropertyValueFactory<>("id"));
-		colName.setCellValueFactory(new PropertyValueFactory<>("name"));
-		colProgress.setCellValueFactory(new PropertyValueFactory<>("progress"));
-		colSpeed.setCellValueFactory(new PropertyValueFactory<>("speed"));
-		colDownloaded.setCellValueFactory(new PropertyValueFactory<>("downloaded"));
-		colPeers.setCellValueFactory(new PropertyValueFactory<>("peers"));
-		colUploadSpeed.setCellValueFactory(new PropertyValueFactory<>("upload speed"));
+		colId.setCellValueFactory(new PropertyValueFactory<entryTorrent, Integer>("id"));
+		colName.setCellValueFactory(new PropertyValueFactory<entryTorrent, String>("name"));
+		colProgress.setCellValueFactory(new PropertyValueFactory<entryTorrent, Double>("progress"));
+		colSpeed.setCellValueFactory(new PropertyValueFactory<entryTorrent, Integer>("speed"));
+		colDownloaded.setCellValueFactory(new PropertyValueFactory<entryTorrent, String>("downloaded"));
+		colPeers.setCellValueFactory(new PropertyValueFactory<entryTorrent, Integer>("peers"));
+		colUploadSpeed.setCellValueFactory(new PropertyValueFactory<entryTorrent, Integer>("uploadSpeed"));
 		table.setItems(data);
 		table.getColumns().setAll(colId, colName, colProgress, colDownloaded, colSpeed, colPeers, colUploadSpeed);
 
@@ -109,9 +110,11 @@ public class Controller {
 	}
 
 	public void deleteTorrent(ActionEvent actionEvent) {
-		for (Torrent tor : torrents)
+		data.clear();
+		for (Torrent tor : torrents) {
 			tor.stop();
-		//do something
+			tor.remove();
+		}
 	}
 
 	public void closeProgram(ActionEvent actionEvent) {
@@ -237,6 +240,10 @@ public class Controller {
 			this.speed.set(speed);
 		}
 
+		public SimpleIntegerProperty speedProperty() {
+			return speed;
+		}
+
 		public int getUploadSpeed() {
 			return uploadSpeed.get();
 		}
@@ -245,8 +252,8 @@ public class Controller {
 			this.uploadSpeed.set(speed);
 		}
 
-		public SimpleIntegerProperty speedProperty() {
-			return speed;
+		public SimpleIntegerProperty uploadProperty() {
+			return uploadSpeed;
 		}
 
 		public int getPeers() {
