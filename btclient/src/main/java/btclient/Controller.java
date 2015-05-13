@@ -20,28 +20,27 @@ import java.io.IOException;
 import java.util.*;
 
 /**
- * Created by Jakub on 2015-05-12.
+ * Created by Jakub && Pyczek on ALWAYS :)
  */
 //TODO selecting torrent in table
 public class Controller {
 
-	public TableColumn<entryTorrent,Integer> colId;
+	public static Serializer serializer;
+	public TableColumn<entryTorrent, Integer> colId;
 	public TableColumn<entryTorrent, String> colName;
-	public TableColumn<entryTorrent,Double> colProgress;
-	public TableColumn<entryTorrent,Integer> colSpeed;
+	public TableColumn<entryTorrent, Double> colProgress;
+	public TableColumn<entryTorrent, Integer> colSpeed;
 	public TableColumn<entryTorrent, String> colDownloaded;
-	public TableColumn<entryTorrent,Integer> colPeers;
+	public TableColumn<entryTorrent, Integer> colPeers;
+	public MenuItem openItem;
+	public MenuItem startItem;
+	public MenuItem stopItem;
+	public MenuItem deleteItem;
+	public MenuItem closeItem;
 	@FXML
 	private TableView<entryTorrent> table;
 	private ObservableList<entryTorrent> data = FXCollections.observableArrayList();
 	private List<Torrent> torrents;
-	public static Serializer serializer;
-
-
-
-	public MenuItem openItem;
-	public MenuItem startItem;
-	public MenuItem stopItem;
 
 	@FXML
 	void initialize() {
@@ -52,30 +51,29 @@ public class Controller {
 		Torrent.setSerializer(serializer);
 		serializer.loadTorrents(torrents);
 		serializer.start();
-		for(Torrent tor : torrents) {
+		for (Torrent tor : torrents) {
 			addTorrent(tor);
 		}
 
 		new Timer().schedule(new TimerTask() {
 
 			@Override
-			public void run()
-			{
+			public void run() {
 
 				Platform.runLater(new Runnable() {
 
 					@Override
 					public void run() {
 
-						for(entryTorrent myentry : data) {
+						for (entryTorrent myentry : data) {
 							Torrent tor = myentry.tor;
 							long downloaded = tor.getVerifiedDownloadCount();
 							//myentry.setId();
-							myentry.setProgress( (downloaded / tor.getTotalSize())); //double
+							myentry.setProgress((downloaded / tor.getTotalSize())); //double
 							myentry.setName(tor.getName());
 							myentry.setSpeed((int) (tor.getDownloadSpeed() / 1024)); //Kb/s
 							myentry.setDownloaded(downloaded / (1 << 20) + "." + downloaded / 1024 % 1024 * 10 / 1024 + "MB");
-							myentry.setPeers( tor.getPeersCount());
+							myentry.setPeers(tor.getPeersCount());
 						}
 					}
 				});
@@ -93,19 +91,31 @@ public class Controller {
 		colPeers.setCellValueFactory(new PropertyValueFactory<entryTorrent, Integer>("peers"));
 
 		table.setItems(data);
-		table.getColumns().setAll(colId,colName,colProgress,colDownloaded,colSpeed,colPeers);
+		table.getColumns().setAll(colId, colName, colProgress, colDownloaded, colSpeed, colPeers);
 
 	}
 
 
 	public void startTorrent(ActionEvent actionEvent) {
-		for(Torrent tor : torrents)
+		for (Torrent tor : torrents)
 			tor.start();
 	}
 
 	public void stopTorrent(ActionEvent actionEvent) {
-		for(Torrent tor : torrents)
+		for (Torrent tor : torrents)
 			tor.stop();
+	}
+
+	public void deleteTorrent(ActionEvent actionEvent) {
+		for (Torrent tor : torrents)
+			tor.stop();
+		//do something
+	}
+
+	public void closeProgram(ActionEvent actionEvent) {
+		for (Torrent tor : torrents)
+			tor.stop();
+		Platform.exit();
 	}
 
 	public void openTorrent(ActionEvent actionEvent) {
@@ -114,7 +124,7 @@ public class Controller {
 		fileChooser.getExtensionFilters().add(new ExtensionFilter("Torrent Files", "*.torrent"));
 		fileChooser.setInitialDirectory(new File(System.getProperty("user.home")));
 		File file = fileChooser.showOpenDialog(null);
-		if(file == null) {
+		if (file == null) {
 			System.err.println("no file selected");
 			return;
 		}
@@ -125,22 +135,22 @@ public class Controller {
 
 			addTorrent(tor);
 
-		} catch(IOException e) {
+		} catch (IOException e) {
 			System.err.println(e.getMessage());
 		}
 	}
 
-	private void addTorrent(final Torrent tor)
-	{
-		if(!tor.start()) {
+	private void addTorrent(final Torrent tor) {
+		if (!tor.start()) {
 			System.err.println("could not start torrent");
 			return;
 		}
 
-		data.add(new entryTorrent(data.size() + 1, tor.getName(),0, "0.0MB", 0, 0 , tor));
+		data.add(new entryTorrent(data.size() + 1, tor.getName(), 0, "0.0MB", 0, 0, tor));
 
 	}
-	public class entryTorrent{
+
+	public class entryTorrent {
 		private final SimpleIntegerProperty id;
 		private final SimpleStringProperty name;
 		private final SimpleDoubleProperty progress;
@@ -150,7 +160,7 @@ public class Controller {
 		private final Torrent tor;
 
 
-		entryTorrent(int id, String name, double progress, String downloaded, int speed, int peers , Torrent tor) {
+		entryTorrent(int id, String name, double progress, String downloaded, int speed, int peers, Torrent tor) {
 			this.id = new SimpleIntegerProperty(id);
 			this.name = new SimpleStringProperty(name);
 			this.progress = new SimpleDoubleProperty(progress);
@@ -164,72 +174,72 @@ public class Controller {
 			return id.get();
 		}
 
-		public SimpleIntegerProperty idProperty() {
-			return id;
-		}
-
 		public void setId(int id) {
 			this.id.set(id);
+		}
+
+		public SimpleIntegerProperty idProperty() {
+			return id;
 		}
 
 		public String getName() {
 			return name.get();
 		}
 
-		public SimpleStringProperty nameProperty() {
-			return name;
-		}
-
 		public void setName(String name) {
 			this.name.set(name);
+		}
+
+		public SimpleStringProperty nameProperty() {
+			return name;
 		}
 
 		public double getProgress() {
 			return progress.get();
 		}
 
-		public SimpleDoubleProperty progressProperty() {
-			return progress;
-		}
-
 		public void setProgress(double progress) {
 			this.progress.set(progress);
+		}
+
+		public SimpleDoubleProperty progressProperty() {
+			return progress;
 		}
 
 		public String getDownloaded() {
 			return downloaded.get();
 		}
 
-		public SimpleStringProperty downloadedProperty() {
-			return downloaded;
-		}
-
 		public void setDownloaded(String downloaded) {
 			this.downloaded.set(downloaded);
+		}
+
+		public SimpleStringProperty downloadedProperty() {
+			return downloaded;
 		}
 
 		public int getSpeed() {
 			return speed.get();
 		}
 
-		public SimpleIntegerProperty speedProperty() {
-			return speed;
-		}
-
 		public void setSpeed(int speed) {
 			this.speed.set(speed);
+		}
+
+		public SimpleIntegerProperty speedProperty() {
+			return speed;
 		}
 
 		public int getPeers() {
 			return peers.get();
 		}
 
-		public SimpleIntegerProperty peersProperty() {
-			return peers;
-		}
-
 		public void setPeers(int peers) {
 			this.peers.set(peers);
+		}
+
+		public SimpleIntegerProperty peersProperty() {
+			return peers;
 		}
 	}
 }
