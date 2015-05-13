@@ -8,6 +8,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.util.ArrayList;
 import java.util.List;
 
 public class Serializer implements TorrentWorker {
@@ -20,9 +21,9 @@ public class Serializer implements TorrentWorker {
 	private static final File torrentsDirectory = new File(
 			defaultDirectory.getPath() + File.separator + "torrents");
 	
-	public Serializer(List<Torrent> torrents)
+	public Serializer()
 	{
-		this.torrents = torrents;
+		this.torrents = new ArrayList<Torrent>();
 		defaultDirectory.mkdir();
 		torrentsDirectory.mkdir();
 	}
@@ -69,7 +70,7 @@ public class Serializer implements TorrentWorker {
 	}
 	
 
-	public void loadTorrents()
+	public void loadTorrents(List<Torrent> torrents)
 	{
 		for(File file : torrentsDirectory.listFiles()) {
 			if(!file.isDirectory())
@@ -82,6 +83,7 @@ public class Serializer implements TorrentWorker {
 			try {
 				Torrent tor = new Torrent(torrentFile);
 				torrents.add(tor);
+				this.torrents.add(tor);
 				File dataFile = new File(file.getPath() + File.separator + "bindata");
 				if(dataFile.exists()) {
 					try(ObjectInputStream in = new ObjectInputStream(new BufferedInputStream(new FileInputStream(dataFile)))) {
@@ -126,9 +128,20 @@ public class Serializer implements TorrentWorker {
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
+		
+		if(tor.isDead()) {
+			remove(tor);
+			torrents.remove(tor);
+		}
 	}
 
-	public void remove(Torrent tor) 
-	{	
+	private void remove(Torrent tor) 
+	{
+		File torrentDirectory = new File(torrentsDirectory.getPath() + File.separator + tor.getInfoHashStr());
+		File torrentFile = new File(torrentDirectory.getPath() + File.separator + "name.torrent");
+		File dataFile = new File(torrentDirectory.getPath() + File.separator + "bindata");
+		if(!torrentFile.delete() || !dataFile.delete() || !torrentDirectory.delete()) {
+			System.err.println("cannot delete " + tor.getName());
+		}
 	}
 }

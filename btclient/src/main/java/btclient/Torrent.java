@@ -34,7 +34,8 @@ public class Torrent {
 	private enum State {
 		IDLE,
 		RUNNING,
-		SEEDING
+		SEEDING,
+		DYING
 	}
 	
 	private List<Tracker> trackers;
@@ -262,6 +263,7 @@ public class Torrent {
 		fragmentSaver.stop();
 		timer.cancel();	
 	}
+	
 	
 	private boolean initListenSocket()
 	{
@@ -663,7 +665,8 @@ public class Torrent {
 	
 	public void remove()
 	{
-		serializer.remove(this);
+		stop();
+		state = State.DYING;
 	}
 	
 	public void addVerifiedPieceToPeers(int index)
@@ -721,5 +724,10 @@ public class Torrent {
 	public boolean isUploadOn()
 	{
 		return uploadOn;
+	}
+	
+	public boolean isDead()
+	{
+		return state == State.DYING;
 	}
 }
