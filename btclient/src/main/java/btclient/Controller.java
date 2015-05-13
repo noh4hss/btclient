@@ -52,7 +52,9 @@ public class Controller {
 		Torrent.setSerializer(serializer);
 		serializer.loadTorrents(torrents);
 		serializer.start();
-		torrents.forEach(this::addTorrent);
+		for (Torrent tor : torrents) {
+			addTorrent(tor);
+		}
 
 		new Timer().schedule(new TimerTask() {
 
@@ -97,20 +99,24 @@ public class Controller {
 
 
 	public void startTorrent(ActionEvent actionEvent) {
-		torrents.forEach(btclient.Torrent::start);
+		for (Torrent tor : torrents)
+			tor.start();
 	}
 
 	public void stopTorrent(ActionEvent actionEvent) {
-		torrents.forEach(btclient.Torrent::stop);
+		for (Torrent tor : torrents)
+			tor.stop();
 	}
 
 	public void deleteTorrent(ActionEvent actionEvent) {
-		torrents.forEach(btclient.Torrent::stop);
+		for (Torrent tor : torrents)
+			tor.stop();
 		//do something
 	}
 
 	public void closeProgram(ActionEvent actionEvent) {
-		torrents.forEach(btclient.Torrent::stop);
+		for (Torrent tor : torrents)
+			tor.stop();
 		Platform.exit();
 	}
 
@@ -227,15 +233,15 @@ public class Controller {
 			return speed.get();
 		}
 
-		public int getUploadSpeed(){
-			return uploadSpeed.get();
-		}
-
 		public void setSpeed(int speed) {
 			this.speed.set(speed);
 		}
 
-		public void setUploadSpeed(int speed){
+		public int getUploadSpeed() {
+			return uploadSpeed.get();
+		}
+
+		public void setUploadSpeed(int speed) {
 			this.uploadSpeed.set(speed);
 		}
 
