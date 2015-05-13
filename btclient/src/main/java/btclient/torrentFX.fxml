@@ -5,7 +5,7 @@
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.control.*?>
 
-<AnchorPane xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1" fx:controller="btclient.Controller">
+<AnchorPane prefHeight="307.0" prefWidth="558.0" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1" fx:controller="btclient.Controller">
    <children>
       <MenuBar layoutX="14.0" layoutY="39.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="0.0">
         <menus>
@@ -16,21 +16,14 @@
                         <KeyCodeCombination alt="UP" code="O" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
                      </accelerator>
                   </MenuItem>
-                  <MenuItem fx:id="startItem" onAction="#startTorrent" text="Start All">
-                     <accelerator>
-                        <KeyCodeCombination alt="UP" code="A" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
-                     </accelerator>
-                  </MenuItem>
+                  <MenuItem fx:id="makeItem" onAction="#makeTorrent" text="Make" />
+                  <MenuItem fx:id="startItem" onAction="#startTorrent" text="Start All" />
                   <MenuItem fx:id="stopItem" onAction="#stopTorrent" text="Stop All">
                      <accelerator>
                         <KeyCodeCombination alt="UP" code="T" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
                      </accelerator>
                   </MenuItem>
-                  <MenuItem fx:id="deleteItem" onAction="#deleteTorrent" text="Delete All">
-                     <accelerator>
-                        <KeyCodeCombination alt="UP" code="D" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
-                     </accelerator>
-                  </MenuItem>
+                  <MenuItem fx:id="deleteItem" onAction="#deleteTorrent" text="Delete All" />
                   <MenuItem fx:id="closeItem" onAction="#closeProgram" text="Close">
                      <accelerator>
                         <KeyCodeCombination alt="UP" code="X" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
@@ -42,12 +35,13 @@
       </MenuBar>
       <TableView fx:id="table" layoutX="-7.0" layoutY="90.0" prefHeight="282.0" prefWidth="607.0" AnchorPane.bottomAnchor="0.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="25.0">
         <columns>
-          <TableColumn fx:id="colId" prefWidth="75.0" text="Id" />
-          <TableColumn fx:id="colName" prefWidth="112.0" text="Name" />
-            <TableColumn fx:id="colProgress" prefWidth="88.0" text="Progress" />
-            <TableColumn fx:id="colDownloaded" text="Downloaded" />
+          <TableColumn fx:id="colId" prefWidth="50.0" text="Id" />
+          <TableColumn fx:id="colName" minWidth="40.0" prefWidth="150.0" text="Name" />
+            <TableColumn fx:id="colProgress" prefWidth="70.0" text="Progress" />
+            <TableColumn fx:id="colDownloaded" prefWidth="85.0" text="Downloaded" />
             <TableColumn fx:id="colSpeed" prefWidth="72.0" text="Speed" />
-            <TableColumn fx:id="colPeers" prefWidth="54.0" text="Peers" />
+            <TableColumn fx:id="colUploadSpeed" prefWidth="88.0" text="Upload Speed" />
+            <TableColumn fx:id="colPeers" prefWidth="41.0" text="Peers" />
         </columns>
       </TableView>
    </children>
