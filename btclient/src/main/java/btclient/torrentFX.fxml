@@ -1,21 +1,36 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
+<?import javafx.scene.input.*?>
+<?import javafx.scene.layout.*?>
 <?import javafx.scene.control.*?>
-<?import javafx.scene.layout.VBox?>
-<VBox maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="400.0" prefWidth="600.0" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1" fx:controller="btclient.Controller">
+
+
+<AnchorPane xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1" fx:controller="btclient.Controller">
    <children>
-      <MenuBar>
+      <MenuBar layoutX="14.0" layoutY="39.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="0.0">
         <menus>
           <Menu mnemonicParsing="false" text="File">
             <items>
-              <MenuItem fx:id="openItem" mnemonicParsing="false" onAction="#openTorrent" text="Open" />
-                  <MenuItem fx:id="startItem" mnemonicParsing="false" onAction="#startTorrent" text="Start All" />
-                  <MenuItem fx:id="stopItem" mnemonicParsing="false" onAction="#stopTorrent" text="Stop All" />
+              <MenuItem fx:id="openItem" onAction="#openTorrent" text="Open">
+                     <accelerator>
+                        <KeyCodeCombination alt="UP" code="O" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
+                     </accelerator>
+                  </MenuItem>
+                  <MenuItem fx:id="startItem" onAction="#startTorrent" text="Start All">
+                     <accelerator>
+                        <KeyCodeCombination alt="UP" code="A" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
+                     </accelerator>
+                  </MenuItem>
+                  <MenuItem fx:id="stopItem" onAction="#stopTorrent" text="Stop All">
+                     <accelerator>
+                        <KeyCodeCombination alt="UP" code="T" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
+                     </accelerator>
+                  </MenuItem>
             </items>
           </Menu>
         </menus>
       </MenuBar>
-      <TableView fx:id="table" prefHeight="372.0" prefWidth="600.0">
+      <TableView fx:id="table" layoutX="-7.0" layoutY="90.0" prefHeight="282.0" prefWidth="607.0" AnchorPane.bottomAnchor="0.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="25.0">
         <columns>
           <TableColumn fx:id="colId" prefWidth="75.0" text="Id" />
           <TableColumn fx:id="colName" prefWidth="112.0" text="Name" />
@@ -26,4 +41,4 @@
         </columns>
       </TableView>
    </children>
-</VBox>
+</AnchorPane>
