@@ -34,7 +34,8 @@ public class Torrent {
 	private enum State {
 		IDLE,
 		RUNNING,
-		SEEDING
+		SEEDING,
+		DYING
 	}
 	
 	private List<Tracker> trackers;
@@ -257,12 +258,12 @@ public class Torrent {
 			for(Peer peer : peers)
 				peer.closeConnection();
 			peers.clear();
-			peersCount.set(0);
 		}
 		
 		fragmentSaver.stop();
 		timer.cancel();	
 	}
+	
 	
 	private boolean initListenSocket()
 	{
@@ -290,7 +291,7 @@ public class Torrent {
 				{
 					while(!Thread.currentThread().isInterrupted()) {
 						
-						if(candidatePeers.isEmpty() || peersCount.get() >= maxPeers) {
+						if(candidatePeers.isEmpty() || peers.size() >= maxPeers) {
 							try {
 								Thread.sleep(1000);
 							} catch(InterruptedException e) {
@@ -526,6 +527,8 @@ public class Torrent {
 				long currentDownloaded = getDownloadCount();
 				long currentUploaded = getUploadCount();
 				
+				//System.err.println(currentUploaded - lastUploaded);
+				
 				downloadSpeed = currentDownloaded - lastDownloaded;
 				uploadSpeed = currentUploaded - lastUploaded;
 				
@@ -662,7 +665,8 @@ public class Torrent {
 	
 	public void remove()
 	{
-		serializer.remove(this);
+		stop();
+		state = State.DYING;
 	}
 	
 	public void addVerifiedPieceToPeers(int index)
@@ -720,5 +724,10 @@ public class Torrent {
 	public boolean isUploadOn()
 	{
 		return uploadOn;
+	}
+	
+	public boolean isDead()
+	{
+		return state == State.DYING;
 	}
 }

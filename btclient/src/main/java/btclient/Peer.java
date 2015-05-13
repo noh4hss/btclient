@@ -53,6 +53,10 @@ public class Peer {
 	
 	private List<Pieces.PeerFrag> peerRequestedFrags;
 	
+	private long downloadCount;
+	
+	private long lastMessageTime;
+	
 	private static final int CONNECT_TIMEOUT_MS = 1000;
 	private static final int HANDSHAKE_TIMEOUT = 3000;
 	
@@ -83,6 +87,8 @@ public class Peer {
 		
 		trusted = false;
 		streaming = false;
+		
+		downloadCount = 0;
 	}
 	
 	public Peer(Torrent tor, InetSocketAddress addr)
@@ -128,7 +134,7 @@ public class Peer {
 					
 					inCount = true;
 					tor.incrementPeersCount();
-					
+										
 					sender = new Thread(new Runnable() {
 
 						@Override
@@ -141,7 +147,10 @@ public class Peer {
 					receiveMessages();
 				
 				} catch(IOException e) {
-					//e.printStackTrace();
+					if(downloadCount > 0) {
+						System.err.println("(" + downloadCount + ") " + getInetAddress());
+						e.printStackTrace();
+					}
 					closeConnection();
 					synchronized(requestedFrags) {
 						pieces.pieceReceiveFailed(requestedFrags);
@@ -246,7 +255,7 @@ public class Peer {
 			switch(id) {
 			case messageChoke:
 				if(len != 1)
-					throw new IOException("choke message invalid length");
+					throw new IOException("choke message invalid length (" + len + ")");
 				peerChoking = true;
 				break;
 			case messageUnchoke:
@@ -308,6 +317,8 @@ public class Peer {
 	private void sendMessages() 
 	{
 		try {
+			lastMessageTime = System.currentTimeMillis();
+			
 			if(pieces.getPiecesVerifiedCount() > 0)
 				sendBitfield();
 			
@@ -319,6 +330,11 @@ public class Peer {
 					return;
 				}
 				
+				if(System.currentTimeMillis() - lastMessageTime > 60 * 1000) {
+					sendKeepAlive();
+				}
+				
+				
 				if(requestedFrags.size() < MAX_REQUESTED_FRAGS) {
 					sendRequests();
 				} else {
@@ -326,7 +342,6 @@ public class Peer {
 					try {
 						Thread.sleep(100);
 					} catch (InterruptedException e) {
-						continue;
 					}
 				}
 				
@@ -354,17 +369,27 @@ public class Peer {
 				out.write(b);
 				
 				tor.increaseUploadCount(b.length);
+			
+				
 			}
 		} catch(IOException e) {
 			closeConnection();
 		}
 	}
 	
+	private void sendKeepAlive() throws IOException
+	{
+		out.writeInt(0);
+		out.flush();
+		lastMessageTime = System.currentTimeMillis();
+	}
+
 	private void sendHaveMsg(int index) throws IOException
 	{
 		out.writeInt(5);
 		out.writeByte(messageHave);
 		out.writeInt(index);
+		lastMessageTime = System.currentTimeMillis();
 	}
 	
 	private void sendUnchoke() throws IOException
@@ -375,6 +400,7 @@ public class Peer {
 		
 		out.writeInt(1);
 		out.writeByte(messageUnchoke);
+		lastMessageTime = System.currentTimeMillis();
 	}
 	
 	private boolean bitfieldReceived = false;
@@ -474,9 +500,9 @@ public class Peer {
 		}
 	
 		sock.setSoTimeout(0);
-		//System.err.println("received piece fragment " + index + " " + begin);
 		pieces.receivedFragment(f, block);
 		sender.interrupt();
+		downloadCount += pieces.getFragLength(f);
 	}
 	
 	private void sendRequests() throws IOException

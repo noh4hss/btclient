@@ -48,9 +48,9 @@ public class Controller {
 		configureTable();
 
 		torrents = Collections.synchronizedList(new ArrayList<Torrent>());
-		serializer = new Serializer(torrents);
+		serializer = new Serializer();
 		Torrent.setSerializer(serializer);
-		serializer.loadTorrents();
+		serializer.loadTorrents(torrents);
 		serializer.start();
 		for(Torrent tor : torrents) {
 			addTorrent(tor);
