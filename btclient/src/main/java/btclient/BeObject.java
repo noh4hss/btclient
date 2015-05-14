@@ -6,6 +6,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.List;
 
+import com.sun.corba.se.impl.ior.ByteBuffer;
+
 public class BeObject {
 	private Object o;
 	
@@ -167,5 +169,78 @@ public class BeObject {
 		return (Map<String, BeObject>)o;
 	}
 	
+	private static byte[] encodeBytes(byte[] b)
+	{
+		String len = Integer.toString(b.length);
+		byte[] ret = new byte[len.length() + 1 + b.length];
+		System.arraycopy(len.getBytes(), 0, ret, 0, len.length());
+		ret[len.length()] = ':';
+		System.arraycopy(b, 0, ret, len.length()+1, b.length);
+		return ret;
+	}
 	
+	private static byte[] encodeLong(long x) 
+	{
+		String s = Long.toString(x);
+		byte[] ret = new byte[2+s.length()];
+		ret[0] = 'i';
+		System.arraycopy(s.getBytes(), 0, ret, 1, s.length());
+		ret[1+s.length()] = 'e';
+		return ret;
+	}
+	
+	private static byte[] encodeString(String s)
+	{
+		return encodeBytes(s.getBytes());
+	}
+	
+	private static byte[] encodeList(List<Object> l)
+	{
+		List<byte[]> lb = new ArrayList<>(l.size());
+		int len = 2;
+		for(Object o : l) {
+			byte[] b = encode(o);
+			lb.add(b);
+			len += b.length;
+		}
+		
+		byte[] ret = new byte[len];
+		ret[0] = 'l';
+		len = 1;
+		for(byte[] b : lb) {
+			System.arraycopy(b, 0, ret, len, b.length);
+			len += b.length;
+		}
+		ret[len] = 'e';
+		return ret;
+	}
+	
+	private static byte[] encodeMap(Map<String, Object> m)
+	{
+		List<Object> l = new ArrayList<>(2*m.size());
+		for(Map.Entry<String, Object> e : m.entrySet()) {
+			l.add(e.getKey());
+			l.add(e.getValue());
+		}
+		
+		byte[] ret = encodeList(l);
+		ret[0] = 'd';
+		return ret;
+	}
+
+	public static byte[] encode(Object o) 
+	{
+		if(o instanceof Long)
+			return encodeLong((Long)o);
+		if(o instanceof byte[])
+			return encodeBytes((byte[])o);
+		if(o instanceof String)
+			return encodeString((String)o);
+		if(o instanceof List)
+			return encodeList((List<Object>)o);
+		if(o instanceof Map)
+			return encodeMap((Map<String, Object>)o);
+		
+		return null;
+	}
 }
