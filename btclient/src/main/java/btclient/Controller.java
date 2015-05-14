@@ -9,8 +9,10 @@ import javafx.collections.ObservableList;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.SelectionMode;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
+import javafx.scene.control.TableView.TableViewSelectionModel;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.stage.FileChooser;
 
@@ -104,13 +106,27 @@ public class Controller {
 		colUploadSpeed.setCellValueFactory(new PropertyValueFactory<TorrentEntry, Integer>("uploadSpeed"));
 		table.setItems(data);
 		table.getColumns().setAll(colId, colName, colProgress, colDownloaded, colSpeed, colPeers, colUploadSpeed);
-
+		table.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
 	}
 
 
 	public void startTorrent(ActionEvent actionEvent) {
 		for (Torrent tor : torrents)
 			tor.start();
+	}
+	
+	public void startSelected(ActionEvent actionEvent)
+	{
+		for(TorrentEntry entry : table.getSelectionModel().getSelectedItems()) {
+			entry.tor.start();
+		}
+	}
+	
+	public void stopSelected(ActionEvent actionEvent)
+	{
+		for(TorrentEntry entry : table.getSelectionModel().getSelectedItems()) {
+			entry.tor.stop();
+		}
 	}
 
 	public void stopTorrent(ActionEvent actionEvent) {

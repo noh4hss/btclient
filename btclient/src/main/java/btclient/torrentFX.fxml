@@ -4,45 +4,60 @@
 <?import javafx.scene.input.*?>
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.control.*?>
+<?import javafx.scene.layout.HBox?>
 
-<AnchorPane prefHeight="307.0" prefWidth="558.0" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1" fx:controller="btclient.Controller">
-   <children>
-      <MenuBar layoutX="14.0" layoutY="39.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="0.0">
-        <menus>
-          <Menu mnemonicParsing="false" text="File">
-            <items>
+<BorderPane xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1" fx:controller="btclient.Controller">
+  <top>
+    <MenuBar>
+      <menus>
+        <Menu mnemonicParsing="false" text="File">
+          <items>
               <MenuItem fx:id="openItem" onAction="#openTorrent" text="Open">
-                     <accelerator>
-                        <KeyCodeCombination alt="UP" code="O" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
-                     </accelerator>
-                  </MenuItem>
-                  <MenuItem fx:id="makeItem" onAction="#makeTorrent" text="Make" />
-                  <MenuItem fx:id="startItem" onAction="#startTorrent" text="Start All" />
-                  <MenuItem fx:id="stopItem" onAction="#stopTorrent" text="Stop All">
-                     <accelerator>
-                        <KeyCodeCombination alt="UP" code="T" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
-                     </accelerator>
-                  </MenuItem>
-                  <MenuItem fx:id="deleteItem" onAction="#deleteTorrent" text="Delete All" />
-                  <MenuItem fx:id="closeItem" onAction="#closeProgram" text="Close">
-                     <accelerator>
-                        <KeyCodeCombination alt="UP" code="X" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
-                     </accelerator>
-                  </MenuItem>
+                <accelerator>
+                  <KeyCodeCombination alt="UP" code="O" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
+                </accelerator>
+              </MenuItem>
+              <MenuItem fx:id="makeItem" onAction="#makeTorrent" text="Make" />
+              <MenuItem fx:id="startItem" onAction="#startTorrent" text="Start All" />
+              <MenuItem fx:id="stopItem" onAction="#stopTorrent" text="Stop All">
+                <accelerator>
+                  <KeyCodeCombination alt="UP" code="T" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
+                </accelerator>
+              </MenuItem>
+              <MenuItem fx:id="deleteItem" onAction="#deleteTorrent" text="Delete All" />
+              <MenuItem fx:id="closeItem" onAction="#closeProgram" text="Close">
+                <accelerator>
+                  <KeyCodeCombination alt="UP" code="X" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
+                </accelerator>
+              </MenuItem>
             </items>
-          </Menu>
-        </menus>
-      </MenuBar>
-      <TableView fx:id="table" layoutX="-7.0" layoutY="90.0" prefHeight="282.0" prefWidth="607.0" AnchorPane.bottomAnchor="0.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="25.0">
-        <columns>
-          <TableColumn fx:id="colId" prefWidth="50.0" text="Id" />
-          <TableColumn fx:id="colName" minWidth="40.0" prefWidth="150.0" text="Name" />
-            <TableColumn fx:id="colProgress" prefWidth="70.0" text="Progress" />
-            <TableColumn fx:id="colDownloaded" prefWidth="85.0" text="Downloaded" />
-            <TableColumn fx:id="colSpeed" prefWidth="72.0" text="Speed" />
-            <TableColumn fx:id="colUploadSpeed" prefWidth="88.0" text="Upload Speed" />
-            <TableColumn fx:id="colPeers" prefWidth="41.0" text="Peers" />
-        </columns>
-      </TableView>
-   </children>
-</AnchorPane>
+        </Menu>
+      </menus>    
+    </MenuBar> 
+  </top>
+   
+  <center>
+    <VBox>
+      <children>
+        <HBox>
+          <children>
+          	<Button text="Start" onAction="#startSelected"/>
+          	<Button text="Stop" onAction="#stopSelected"/>
+          	<Button text="Delete"/>
+          </children>
+        </HBox>
+        <TableView fx:id="table">
+          <columns>
+            <TableColumn fx:id="colId" text="Id" />
+            <TableColumn fx:id="colName" minWidth="200.0" text="Name" />
+            <TableColumn fx:id="colProgress" text="Progress" />
+            <TableColumn fx:id="colDownloaded" text="Downloaded" />
+            <TableColumn fx:id="colSpeed" text="Speed" />
+            <TableColumn fx:id="colUploadSpeed" text="Upload Speed" />
+            <TableColumn fx:id="colPeers" text="Peers" />
+          </columns>
+        </TableView>
+      </children>
+    </VBox>
+  </center>
+</BorderPane>

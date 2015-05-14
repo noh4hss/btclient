@@ -6,8 +6,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.List;
 
-import com.sun.corba.se.impl.ior.ByteBuffer;
-
 public class BeObject {
 	private Object o;
 	
