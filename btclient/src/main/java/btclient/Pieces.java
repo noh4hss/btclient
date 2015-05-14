@@ -145,6 +145,15 @@ public class Pieces {
 				throw new IOException();
 			verified = newVerified;
 			
+			piecesDownloadedCount = 0;
+			verifiedDownloadCount = 0;
+			for(int i = 0; i < piecesCount; ++i) {
+				if(verified.get(i)) {
+					++piecesDownloadedCount;
+					verifiedDownloadCount += getPieceLength(i);
+				}
+			}
+			
 			return true;
 		} catch (ClassNotFoundException | ClassCastException | IOException e) {
 			e.printStackTrace();
@@ -157,13 +166,10 @@ public class Pieces {
 		// initializing only from have and verified bitsets
 		
 		freePiecesCount.set(0);
-		piecesDownloadedCount = 0;
-		verifiedDownloadCount = 0;
+		
 		for(int i = 0; i < piecesCount; ++i) {
 			if(verified.get(i)) {
 				p[i].state = PieceState.VERIFIED;
-				++piecesDownloadedCount;
-				verifiedDownloadCount += getPieceLength(i);
 				continue;
 			}
 			

@@ -70,10 +70,6 @@ public class Torrent {
 	
 	private State state;
 	
-	private Timer timer;
-	private long downloadSpeed;
-	private long uploadSpeed;
-	
 	private Announcer announcer;
 	private FragmentSaver fragmentSaver;
 
@@ -144,6 +140,7 @@ public class Torrent {
 			completed = false;
 			
 			peers = Collections.synchronizedList(new LinkedList<Peer>());
+			peersCount = new AtomicInteger(0);
 		} catch(Exception e) {
 			throw new IOException("invalid file format");
 		}
@@ -221,7 +218,7 @@ public class Torrent {
 		candidatePeers = Collections.synchronizedList(new LinkedList<InetSocketAddress>());
 		blacklist = Collections.synchronizedSet(new HashSet<InetAddress>());
 		
-		peersCount = new AtomicInteger(0);
+		peersCount.set(0);
 		
 		pieces.init();
 		
@@ -230,8 +227,6 @@ public class Torrent {
 		announcer.start();
 		peerListener.start();
 		peerManager.start();
-		timer = new Timer();
-		scheduleSpeedMeasurementTask();
 		
 		return true;
 	}
@@ -261,7 +256,6 @@ public class Torrent {
 		}
 		
 		fragmentSaver.stop();
-		timer.cancel();	
 	}
 	
 	
@@ -515,29 +509,6 @@ public class Torrent {
 		return downloadDirectory;
 	}
 	
-	private void scheduleSpeedMeasurementTask()
-	{
-		timer.schedule(new TimerTask() {
-			long lastDownloaded = getDownloadCount();
-			long lastUploaded = getUploadCount();
-			
-			@Override
-			public void run() 
-			{
-				long currentDownloaded = getDownloadCount();
-				long currentUploaded = getUploadCount();
-				
-				//System.err.println(currentUploaded - lastUploaded);
-				
-				downloadSpeed = currentDownloaded - lastDownloaded;
-				uploadSpeed = currentUploaded - lastUploaded;
-				
-				lastDownloaded = currentDownloaded;
-				lastUploaded = currentUploaded;
-			}
-			
-		}, 0, 1000);
-	}
 	
 	public List<FragmentSaver.FileEntry> getFiles()
 	{
@@ -604,17 +575,6 @@ public class Torrent {
 	{
 		return totalSize - getVerifiedDownloadCount();
 	}
-	
-	public long getDownloadSpeed()
-	{
-		return downloadSpeed;
-	}
-	
-	public long getUploadSpeed()
-	{
-		return uploadSpeed;
-	}
-	
 
 	public String getInfoHashStr() 
 	{

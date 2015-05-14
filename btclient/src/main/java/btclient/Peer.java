@@ -368,9 +368,8 @@ public class Peer {
 				out.writeInt(f.begin);
 				out.write(b);
 				
-				tor.increaseUploadCount(b.length);
-			
 				
+				tor.increaseUploadCount(b.length);
 			}
 		} catch(IOException e) {
 			closeConnection();

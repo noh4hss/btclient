@@ -18,20 +18,18 @@ import java.io.File;
 import java.io.IOException;
 import java.util.*;
 
-/**
- * Created by Jakub && Pyczek on ALWAYS :)
- */
+
 //TODO selecting torrent in table
 public class Controller {
 
 	public static Serializer serializer;
-	public TableColumn<entryTorrent, Integer> colId;
-	public TableColumn<entryTorrent, String> colName;
-	public TableColumn<entryTorrent, Double> colProgress;
-	public TableColumn<entryTorrent, Integer> colSpeed;
-	public TableColumn<entryTorrent, Integer> colUploadSpeed;
-	public TableColumn<entryTorrent, String> colDownloaded;
-	public TableColumn<entryTorrent, Integer> colPeers;
+	public TableColumn<TorrentEntry, Integer> colId;
+	public TableColumn<TorrentEntry, String> colName;
+	public TableColumn<TorrentEntry, Double> colProgress;
+	public TableColumn<TorrentEntry, Integer> colSpeed;
+	public TableColumn<TorrentEntry, Integer> colUploadSpeed;
+	public TableColumn<TorrentEntry, String> colDownloaded;
+	public TableColumn<TorrentEntry, Integer> colPeers;
 	public MenuItem openItem;
 	public MenuItem startItem;
 	public MenuItem stopItem;
@@ -39,8 +37,8 @@ public class Controller {
 	public MenuItem closeItem;
 	public MenuItem makeItem;
 	@FXML
-	private TableView<entryTorrent> table;
-	private ObservableList<entryTorrent> data = FXCollections.observableArrayList();
+	private TableView<TorrentEntry> table;
+	private ObservableList<TorrentEntry> data = FXCollections.observableArrayList();
 	private List<Torrent> torrents;
 
 	@FXML
@@ -53,30 +51,41 @@ public class Controller {
 		serializer.loadTorrents(torrents);
 		serializer.start();
 		for (Torrent tor : torrents) {
-			data.add(new entryTorrent(data.size() + 1, tor.getName(), 0, "0.0MB", 0, 0, 0, tor));
+			long downloaded = tor.getVerifiedDownloadCount();
+			System.err.println(downloaded);
+			String downloadedText = downloaded / (1 << 20) + "." + downloaded / 1024 % 1024 * 10 / 1024 + "MB";
+			data.add(new TorrentEntry(data.size() + 1, tor.getName(), 0, downloadedText, 0, 0, 0, tor));
 		}
 
 		new Timer().schedule(new TimerTask() {
 
 			@Override
 			public void run() {
-
+				
 				Platform.runLater(new Runnable() {
 
 					@Override
 					public void run() {
 
-						for (entryTorrent myEntry : data) {
-							Torrent tor = myEntry.tor;
+						for (TorrentEntry entry : data) {
+							Torrent tor = entry.tor;
 							long downloaded = tor.getVerifiedDownloadCount();
-							//myEntry.setId();
-							myEntry.setProgress((100 * downloaded / tor.getTotalSize())); //double
-							myEntry.setName(tor.getName());
-							myEntry.setSpeed((int) (tor.getDownloadSpeed() / 1024)); //Kb/s
-							//myEntry.setUploadSpeed((int) (tor.getUploadSpeed())); //Kb/s nie wiem czemu nie dziala
-							myEntry.setDownloaded(downloaded / (1 << 20) + "." + downloaded / 1024 % 1024 * 10 / 1024 + "MB");
-							myEntry.setPeers(tor.getPeersCount());
-							//System.out.println(tor.getUploadCount());
+							long currentDownloadCount = tor.getDownloadCount();
+							long currentUploadCount = tor.getUploadCount();
+							
+							long downloadSpeed = currentDownloadCount - entry.lastDownloadCount;
+							long uploadSpeed = currentUploadCount - entry.lastUploadCount;
+							
+							//entry.setId();
+							entry.setProgress((100 * downloaded / tor.getTotalSize())); //double
+							entry.setName(tor.getName());
+							entry.setSpeed((int)(downloadSpeed / 1000)); //Kb/s
+							entry.setUploadSpeed((int)(uploadSpeed / 1000)); //Kb/s
+							entry.setDownloaded(downloaded / (1 << 20) + "." + downloaded / 1024 % 1024 * 10 / 1024 + "MB");
+							entry.setPeers(tor.getPeersCount());
+							
+							entry.lastDownloadCount = currentDownloadCount;
+							entry.lastUploadCount = currentUploadCount;
 						}
 					}
 				});
@@ -86,13 +95,13 @@ public class Controller {
 	}
 
 	private void configureTable() {
-		colId.setCellValueFactory(new PropertyValueFactory<entryTorrent, Integer>("id"));
-		colName.setCellValueFactory(new PropertyValueFactory<entryTorrent, String>("name"));
-		colProgress.setCellValueFactory(new PropertyValueFactory<entryTorrent, Double>("progress"));
-		colSpeed.setCellValueFactory(new PropertyValueFactory<entryTorrent, Integer>("speed"));
-		colDownloaded.setCellValueFactory(new PropertyValueFactory<entryTorrent, String>("downloaded"));
-		colPeers.setCellValueFactory(new PropertyValueFactory<entryTorrent, Integer>("peers"));
-		colUploadSpeed.setCellValueFactory(new PropertyValueFactory<entryTorrent, Integer>("uploadSpeed"));
+		colId.setCellValueFactory(new PropertyValueFactory<TorrentEntry, Integer>("id"));
+		colName.setCellValueFactory(new PropertyValueFactory<TorrentEntry, String>("name"));
+		colProgress.setCellValueFactory(new PropertyValueFactory<TorrentEntry, Double>("progress"));
+		colSpeed.setCellValueFactory(new PropertyValueFactory<TorrentEntry, Integer>("speed"));
+		colDownloaded.setCellValueFactory(new PropertyValueFactory<TorrentEntry, String>("downloaded"));
+		colPeers.setCellValueFactory(new PropertyValueFactory<TorrentEntry, Integer>("peers"));
+		colUploadSpeed.setCellValueFactory(new PropertyValueFactory<TorrentEntry, Integer>("uploadSpeed"));
 		table.setItems(data);
 		table.getColumns().setAll(colId, colName, colProgress, colDownloaded, colSpeed, colPeers, colUploadSpeed);
 
@@ -112,7 +121,6 @@ public class Controller {
 	public void deleteTorrent(ActionEvent actionEvent) {
 		data.clear();
 		for (Torrent tor : torrents) {
-			tor.stop();
 			tor.remove();
 		}
 	}
@@ -158,11 +166,11 @@ public class Controller {
 			return;
 		}
 
-		data.add(new entryTorrent(data.size() + 1, tor.getName(), 0, "0.0MB", 0, 0, 0, tor));
+		data.add(new TorrentEntry(data.size() + 1, tor.getName(), 0, "0.0MB", 0, 0, 0, tor));
 
 	}
 
-	public class entryTorrent {
+	public static class TorrentEntry {
 		private final SimpleIntegerProperty id;
 		private final SimpleStringProperty name;
 		private final SimpleDoubleProperty progress;
@@ -171,9 +179,10 @@ public class Controller {
 		private final SimpleIntegerProperty uploadSpeed;
 		private final SimpleIntegerProperty peers;
 		private final Torrent tor;
+		private long lastDownloadCount;
+		private long lastUploadCount;
 
-
-		entryTorrent(int id, String name, double progress, String downloaded, int speed, int uploadSpeed, int peers, Torrent tor) {
+		TorrentEntry(int id, String name, double progress, String downloaded, int speed, int uploadSpeed, int peers, Torrent tor) {
 			this.id = new SimpleIntegerProperty(id);
 			this.name = new SimpleStringProperty(name);
 			this.progress = new SimpleDoubleProperty(progress);
@@ -182,6 +191,8 @@ public class Controller {
 			this.uploadSpeed = new SimpleIntegerProperty(uploadSpeed);
 			this.peers = new SimpleIntegerProperty(peers);
 			this.tor = tor;
+			lastDownloadCount = tor.getDownloadCount();
+			lastUploadCount = tor.getUploadCount();
 		}
 
 		public int getId() {
@@ -249,6 +260,7 @@ public class Controller {
 		}
 
 		public void setUploadSpeed(int speed) {
+			System.err.println("upload speed: " + speed);
 			this.uploadSpeed.set(speed);
 		}
 
