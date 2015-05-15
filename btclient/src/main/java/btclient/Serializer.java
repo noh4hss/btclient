@@ -70,7 +70,7 @@ public class Serializer implements TorrentWorker {
 	}
 	
 
-	public void loadTorrents(List<Torrent> torrents)
+	public List<Torrent> loadTorrents()
 	{
 		for(File file : torrentsDirectory.listFiles()) {
 			if(!file.isDirectory())
@@ -83,7 +83,6 @@ public class Serializer implements TorrentWorker {
 			try {
 				Torrent tor = new Torrent(torrentFile);
 				torrents.add(tor);
-				this.torrents.add(tor);
 				File dataFile = new File(file.getPath() + File.separator + "bindata");
 				if(dataFile.exists()) {
 					try(ObjectInputStream in = new ObjectInputStream(new BufferedInputStream(new FileInputStream(dataFile)))) {
@@ -94,6 +93,8 @@ public class Serializer implements TorrentWorker {
 				e.printStackTrace();
 			}
 		}
+		
+		return torrents;
 	}
 	
 	

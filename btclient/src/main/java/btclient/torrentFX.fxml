@@ -17,19 +17,6 @@
                   <KeyCodeCombination alt="UP" code="O" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
                 </accelerator>
               </MenuItem>
-              <MenuItem fx:id="makeItem" onAction="#makeTorrent" text="Make" />
-              <MenuItem fx:id="startItem" onAction="#startTorrent" text="Start All" />
-              <MenuItem fx:id="stopItem" onAction="#stopTorrent" text="Stop All">
-                <accelerator>
-                  <KeyCodeCombination alt="UP" code="T" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
-                </accelerator>
-              </MenuItem>
-              <MenuItem fx:id="deleteItem" onAction="#deleteTorrent" text="Delete All" />
-              <MenuItem fx:id="closeItem" onAction="#closeProgram" text="Close">
-                <accelerator>
-                  <KeyCodeCombination alt="UP" code="X" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
-                </accelerator>
-              </MenuItem>
             </items>
         </Menu>
       </menus>    
@@ -43,18 +30,17 @@
           <children>
           	<Button text="Start" onAction="#startSelected"/>
           	<Button text="Stop" onAction="#stopSelected"/>
-          	<Button text="Delete"/>
+          	<Button text="Delete" onAction="#deleteSelected"/>
           </children>
         </HBox>
         <TableView fx:id="table">
           <columns>
-            <TableColumn fx:id="colId" text="Id" />
             <TableColumn fx:id="colName" minWidth="200.0" text="Name" />
             <TableColumn fx:id="colProgress" text="Progress" />
             <TableColumn fx:id="colDownloaded" text="Downloaded" />
-            <TableColumn fx:id="colSpeed" text="Speed" />
-            <TableColumn fx:id="colUploadSpeed" text="Upload Speed" />
             <TableColumn fx:id="colPeers" text="Peers" />
+            <TableColumn fx:id="colDownloadSpeed" text="Download" />
+            <TableColumn fx:id="colUploadSpeed" text="Upload" />  
           </columns>
         </TableView>
       </children>

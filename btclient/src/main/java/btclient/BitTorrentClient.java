@@ -1,6 +1,7 @@
 package btclient;
 
 
+import java.util.List;
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
@@ -10,13 +11,17 @@ import javafx.stage.Stage;
 
 
 public class BitTorrentClient extends Application {
-	public static void main(String[] args) {
+	static List<Controller.TorrentEntry> torrents;
+	static Serializer serializer;
+	
+	public static void main(String[] args) 
+	{
 		launch(args);
 	}
+	
 	@Override
 	public void start(Stage stage) throws Exception 
 	{
-		// when applications closes one should call serializer.stop()
 		Parent root = FXMLLoader.load(getClass().getResource("torrentFX.fxml"));
 		stage.setTitle("BitTorrent Client");
 		stage.setScene(new Scene(root));
@@ -25,8 +30,21 @@ public class BitTorrentClient extends Application {
 	}
 
 	@Override
-	public void stop() throws Exception {
-		Controller.serializer.stop(); //?
+	public void stop() throws Exception 
+	{
+		for(Controller.TorrentEntry entry : torrents)
+			entry.tor.stop();
+		serializer.stop();
 		super.stop();
+	}
+	
+	public static void setTorrents(List<Controller.TorrentEntry> torrents) 
+	{
+		BitTorrentClient.torrents = torrents;
+	}
+	
+	public static void setSerializer(Serializer serializer)
+	{
+		BitTorrentClient.serializer = serializer;
 	}
 }
