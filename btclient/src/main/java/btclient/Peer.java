@@ -16,7 +16,12 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Queue;
+import java.util.Random;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentLinkedQueue;
+
+import btclient.Pieces.PieceFrag;
+import btclient.Pieces.PieceSelector;
 
 
 public class Peer {
@@ -57,6 +62,8 @@ public class Peer {
 	
 	private long lastMessageTime;
 	
+	private boolean oneDownloaded;
+	
 	private static final int CONNECT_TIMEOUT_MS = 1000;
 	private static final int HANDSHAKE_TIMEOUT = 3000;
 	
@@ -69,7 +76,7 @@ public class Peer {
 		
 		pieces = tor.getPieces();
 		piecesCount = pieces.getCount();
-		pieceSelector = pieces.getRandomSelector();
+		pieceSelector = (streaming ? getStreamingSelector() : getRandomSelector());
 		
 		bs = new BitSet(piecesCount);
 		
@@ -147,10 +154,10 @@ public class Peer {
 					receiveMessages();
 				
 				} catch(IOException e) {
-					if(downloadCount > 0) {
+					/*if(downloadCount > 0) {
 						System.err.println("(" + downloadCount + ") " + getInetAddress());
 						e.printStackTrace();
-					}
+					}*/
 					closeConnection();
 					synchronized(requestedFrags) {
 						pieces.pieceReceiveFailed(requestedFrags);
@@ -211,9 +218,7 @@ public class Peer {
 	private static final int messagePort = 9;
 	
 	private void receiveMessages() throws IOException
-	{		
-		int timeoutsCount = 0;
-		
+	{				
 		while(!closed) {
 			int len;
 			try {
@@ -221,14 +226,6 @@ public class Peer {
 				len = in.readInt();
 				sock.setSoTimeout(0);
 			} catch(SocketTimeoutException e) {
-				if(!requestedFrags.isEmpty()) {
-					++timeoutsCount;
-					if(streaming && timeoutsCount >= 2) {
-						throw new IOException("unrensponsive peer in streaming");
-					}
-				} else {
-					timeoutsCount = 1;
-				}
 				continue;
 			}
 			
@@ -475,9 +472,7 @@ public class Peer {
 		
 		byte[] block = new byte[length];
 		int off = 0;
-		sock.setSoTimeout(1000);
 		
-		long startTime = System.currentTimeMillis();
 		while(off < length) {
 			try {
 				int ret = in.read(block, off, length-off);
@@ -487,14 +482,6 @@ public class Peer {
 				if(!canceledFrag)
 					tor.increaseDownloaded(ret);
 			} catch(SocketTimeoutException e) {
-				if(streaming) {
-					throw new IOException("unrensponsive peer in streaming");
-				}
-			}
-			
-			if(streaming) {
-				if(System.currentTimeMillis() - startTime >= 1000)
-					throw new IOException("unrensponsive peer in streaming");
 			}
 		}
 	
@@ -502,6 +489,8 @@ public class Peer {
 		pieces.receivedFragment(f, block);
 		sender.interrupt();
 		downloadCount += pieces.getFragLength(f);
+		if(downloadCount >= pieces.getPieceLength())
+			oneDownloaded = true;
 	}
 	
 	private void sendRequests() throws IOException
@@ -583,6 +572,107 @@ public class Peer {
 		}
 	}
 	
+	private PieceSelector getRandomSelector() 
+	{
+		return new PieceSelector() {
+			ArrayList<Integer> l = new ArrayList<>();
+			int currentIndex = -1;
+			Random gen = new Random();
+			
+			@Override
+			public synchronized void addPiece(int index) 
+			{
+				l.add(index);
+				int i = gen.nextInt(l.size());
+				index = l.set(i, index);
+				l.set(l.size()-1, index);
+			}
+
+			@Override
+			public synchronized PieceFrag selectPiece(Peer peer) 
+			{
+				if(currentIndex != -1) {
+					PieceFrag f = pieces.requestPieceFrag(currentIndex);
+					if(f != null)
+						return f;
+				}
+				
+				while(!l.isEmpty()) {
+					int index = l.get(l.size()-1);
+					l.remove(l.size()-1);
+					if(pieces.requestPiece(index, peer)) {
+						currentIndex = index;
+						PieceFrag f = pieces.requestPieceFrag(currentIndex);
+						if(f != null)
+							return f;
+					}
+				}
+				
+				return null;
+			}
+
+			@Override
+			public synchronized void movePiecesTo(PieceSelector ps) 
+			{
+				for(int index : l)
+					ps.addPiece(index);
+			}
+			
+		};
+	}
+	
+	private PieceSelector getStreamingSelector()
+	{
+		return new PieceSelector() {
+			private TreeSet<Integer> set = new TreeSet<>();
+			int currentIndex = -1;
+			
+			@Override
+			public synchronized void addPiece(int index) 
+			{
+				set.add(index);
+			}
+
+			@Override
+			public synchronized PieceFrag selectPiece(Peer peer) 
+			{
+				if(currentIndex != -1) {
+					PieceFrag f = pieces.requestPieceFrag(currentIndex);
+					if(f != null)
+						return f;
+				}
+				
+				while(!set.isEmpty()) {
+					int index;
+					if(oneDownloaded) {
+						index = set.pollFirst();
+					} else {
+						index = set.pollLast();
+						if(index < 0.9*piecesCount) {
+							set.add(index);
+							return null;
+						}
+					}
+					if(pieces.requestPiece(index, peer)) {
+						currentIndex = index;
+						PieceFrag f = pieces.requestPieceFrag(currentIndex);
+						if(f != null)
+							return f;
+					}
+				}
+				
+				return null;
+			}
+			
+			@Override
+			public synchronized void movePiecesTo(PieceSelector ps) 
+			{
+				for(int index : set)
+					ps.addPiece(index);
+			}
+		};
+	}
+	
 	public boolean isTrusted()
 	{
 		return trusted;
@@ -599,9 +689,10 @@ public class Peer {
 			return;
 		streaming = true;
 		
-		Pieces.PieceSelector newPieceSelector = pieces.getStreamingSelector();
+		Pieces.PieceSelector newPieceSelector = getStreamingSelector();
 		pieceSelector.movePiecesTo(newPieceSelector);
 		pieceSelector = newPieceSelector;
+		oneDownloaded = false;
 	}
 	
 	public void disableStreaming() 
@@ -610,7 +701,7 @@ public class Peer {
 			return;
 		streaming = false;
 		
-		Pieces.PieceSelector newPieceSelector = pieces.getRandomSelector();
+		Pieces.PieceSelector newPieceSelector = getRandomSelector();
 		pieceSelector.movePiecesTo(newPieceSelector);
 		pieceSelector = newPieceSelector;
 	}

@@ -240,97 +240,6 @@ public class Pieces {
 		public void movePiecesTo(PieceSelector ps);
 	}
 	
-	public PieceSelector getRandomSelector() 
-	{
-		return new PieceSelector() {
-			ArrayList<Integer> l = new ArrayList<>();
-			int currentIndex = -1;
-			Random gen = new Random();
-			
-			@Override
-			public synchronized void addPiece(int index) 
-			{
-				l.add(index);
-				int i = gen.nextInt(l.size());
-				index = l.set(i, index);
-				l.set(l.size()-1, index);
-			}
-
-			@Override
-			public synchronized PieceFrag selectPiece(Peer peer) 
-			{
-				if(currentIndex != -1) {
-					PieceFrag f = requestPieceFrag(currentIndex);
-					if(f != null)
-						return f;
-				}
-				
-				while(!l.isEmpty()) {
-					int index = l.get(l.size()-1);
-					l.remove(l.size()-1);
-					if(requestPiece(index, peer)) {
-						currentIndex = index;
-						PieceFrag f = requestPieceFrag(currentIndex);
-						if(f != null)
-							return f;
-					}
-				}
-				
-				return null;
-			}
-
-			@Override
-			public synchronized void movePiecesTo(PieceSelector ps) 
-			{
-				for(int index : l)
-					ps.addPiece(index);
-			}
-			
-		};
-	}
-	
-	public PieceSelector getStreamingSelector()
-	{
-		return new PieceSelector() {
-			private TreeSet<Integer> set = new TreeSet<>();
-			int currentIndex = -1;
-			
-			@Override
-			public synchronized void addPiece(int index) 
-			{
-				set.add(index);
-			}
-
-			@Override
-			public synchronized PieceFrag selectPiece(Peer peer) 
-			{
-				if(currentIndex != -1) {
-					PieceFrag f = requestPieceFrag(currentIndex);
-					if(f != null)
-						return f;
-				}
-				
-				while(!set.isEmpty()) {
-					int index = set.pollFirst();
-					if(requestPiece(index, peer)) {
-						currentIndex = index;
-						PieceFrag f = requestPieceFrag(currentIndex);
-						if(f != null)
-							return f;
-					}
-				}
-				
-				return null;
-			}
-			
-			@Override
-			public synchronized void movePiecesTo(PieceSelector ps) 
-			{
-				for(int index : set)
-					ps.addPiece(index);
-			}
-		};
-	}
 	
 	public void setDiskDelegate(FragmentSaver diskDelagate)
 	{
@@ -360,6 +269,7 @@ public class Pieces {
 			if(piece.writeCount == getPieceFragCount(index)) {
 				piece.state = PieceState.DOWNLOADED;
 				fragmentSaver.readPiece(index);
+				//System.err.println(index + " piece " + p[index].peer);
 			}
 		}
 	}

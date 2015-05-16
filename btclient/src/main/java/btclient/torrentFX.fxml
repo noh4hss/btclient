@@ -22,6 +22,9 @@
                 <KeyCodeCombination alt="UP" code="O" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
               </accelerator>
             </MenuItem>
+            <MenuItem fx:id="startAllItem" onAction="#startAll" text="Start All"/>
+            <MenuItem fx:id="stopAllItem" onAction="#stopAll" text="Stop All"/>
+            <MenuItem fx:id="deleteAllItem" onAction="#deleteAll" text="Delete All"/>
           </items>
         </Menu>
       </menus>    

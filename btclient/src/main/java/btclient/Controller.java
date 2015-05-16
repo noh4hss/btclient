@@ -11,12 +11,16 @@ import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.event.ActionEvent;
+import javafx.event.EventHandler;
 import javafx.fxml.FXML;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SelectionMode;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.cell.PropertyValueFactory;
+import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
 import javafx.stage.FileChooser;
 
 
@@ -200,6 +204,12 @@ public class Controller {
 	private MenuItem openItem;
 	@FXML
 	private MenuItem newItem;
+	@FXML
+	private MenuItem startAllItem;
+	@FXML
+	private MenuItem stopAllItem;
+	@FXML
+	private MenuItem deleteAllItem;
 	
 	private Timer timer;
 	
@@ -270,7 +280,35 @@ public class Controller {
 		table.getColumns().setAll(colName, colProgress, colDownloaded, colPeers, colDownloadSpeed, colUploadSpeed);
 		table.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
 		table.setItems(torrents);
+		
+		table.setOnMouseClicked(new EventHandler<MouseEvent>() {
+			ContextMenu contextMenu;
+			
+			@Override
+			public void handle(MouseEvent event) 
+			{
+				if(contextMenu != null)
+					contextMenu.hide();
+				
+				if(event.getButton() != MouseButton.SECONDARY)
+					return;
+				
+				Torrent tor = table.getSelectionModel().getSelectedItem().tor;
+				contextMenu = new ContextMenu();
+				MenuItem streamingMenu = new MenuItem();
+				if(!tor.isStreaming()) {
+					streamingMenu.setText("Enable Streaming");
+					streamingMenu.setOnAction(e -> tor.enableStreaming());
+				} else {
+					streamingMenu.setText("Disable Streaming");
+					streamingMenu.setOnAction(e -> tor.disableStreaming());
+				}
+				contextMenu.getItems().addAll(streamingMenu);
 
+				contextMenu.show(table, event.getScreenX(), event.getScreenY());
+			}
+	
+		});
 	}
 	
 	@FXML
@@ -316,12 +354,26 @@ public class Controller {
 	}
 	
 	@FXML
+	private void startAll(ActionEvent actionEvent)
+	{
+		for(TorrentEntry entry : torrents)
+			entry.tor.start();
+	}
+	
+	@FXML
 	private void stopSelected(ActionEvent actionEvent)
 	{
 		for(TorrentEntry entry : table.getSelectionModel().getSelectedItems()) {
 			entry.tor.stop();
 		}
 		table.requestFocus();
+	}
+	
+	@FXML
+	private void stopAll(ActionEvent actionEvent)
+	{
+		for(TorrentEntry entry : torrents)
+			entry.tor.stop();
 	}
 	
 	@FXML
@@ -332,5 +384,13 @@ public class Controller {
 			torrents.remove(entry);
 		}
 		table.requestFocus();
+	}
+	
+	@FXML
+	private void deleteAll(ActionEvent actionEvent)
+	{
+		for(TorrentEntry entry : torrents)
+			entry.tor.remove();
+		torrents.clear();
 	}
 }

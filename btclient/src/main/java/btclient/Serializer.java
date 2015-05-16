@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public class Serializer implements TorrentWorker {
@@ -23,7 +24,7 @@ public class Serializer implements TorrentWorker {
 	
 	public Serializer()
 	{
-		this.torrents = new ArrayList<Torrent>();
+		this.torrents = Collections.synchronizedList(new ArrayList<Torrent>());
 		defaultDirectory.mkdir();
 		torrentsDirectory.mkdir();
 	}
@@ -113,6 +114,8 @@ public class Serializer implements TorrentWorker {
 			
 			File dataFile = new File(torrentDirectory.getPath() + File.separator + "bindata");
 			dataFile.createNewFile();
+			
+			torrents.add(tor);
 		} catch(IOException e) {
 			e.printStackTrace();
 		}

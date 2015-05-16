@@ -66,7 +66,7 @@ public class Torrent {
 	
 	private String downloadDirectory;
 	
-	private State state;
+	private volatile State state;
 	
 	private Announcer announcer;
 	private FragmentSaver fragmentSaver;
@@ -693,5 +693,10 @@ public class Torrent {
 	public boolean isDead()
 	{
 		return state == State.DYING;
+	}
+
+	public boolean isStreaming() 
+	{
+		return streaming;
 	}
 }
