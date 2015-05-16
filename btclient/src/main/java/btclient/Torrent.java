@@ -256,6 +256,12 @@ public class Torrent {
 		fragmentSaver.stop();
 	}
 	
+	public void forceStop()
+	{
+		stop();
+		announcer.forceStop();
+	}
+	
 	
 	private boolean initListenSocket()
 	{

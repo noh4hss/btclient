@@ -12,12 +12,17 @@
       <menus>
         <Menu mnemonicParsing="false" text="File">
           <items>
-              <MenuItem fx:id="openItem" onAction="#openTorrent" text="Open">
-                <accelerator>
-                  <KeyCodeCombination alt="UP" code="O" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
-                </accelerator>
-              </MenuItem>
-            </items>
+            <MenuItem fx:id="newItem" onAction="#newTorrent" text="New">
+              <accelerator>
+                <KeyCodeCombination alt="UP" code="N" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
+              </accelerator>
+            </MenuItem>
+            <MenuItem fx:id="openItem" onAction="#openTorrent" text="Open">
+              <accelerator>
+                <KeyCodeCombination alt="UP" code="O" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
+              </accelerator>
+            </MenuItem>
+          </items>
         </Menu>
       </menus>    
     </MenuBar> 

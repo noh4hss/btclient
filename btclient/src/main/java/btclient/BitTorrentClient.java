@@ -1,7 +1,6 @@
 package btclient;
 
 
-import java.util.List;
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
@@ -11,8 +10,7 @@ import javafx.stage.Stage;
 
 
 public class BitTorrentClient extends Application {
-	static List<Controller.TorrentEntry> torrents;
-	static Serializer serializer;
+	private static Controller controller;
 	
 	public static void main(String[] args) 
 	{
@@ -32,19 +30,12 @@ public class BitTorrentClient extends Application {
 	@Override
 	public void stop() throws Exception 
 	{
-		for(Controller.TorrentEntry entry : torrents)
-			entry.tor.stop();
-		serializer.stop();
-		super.stop();
+		controller.stop();
 	}
 	
-	public static void setTorrents(List<Controller.TorrentEntry> torrents) 
+
+	public static void setController(Controller controller)
 	{
-		BitTorrentClient.torrents = torrents;
-	}
-	
-	public static void setSerializer(Serializer serializer)
-	{
-		BitTorrentClient.serializer = serializer;
+		BitTorrentClient.controller = controller;
 	}
 }

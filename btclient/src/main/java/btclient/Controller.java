@@ -2,7 +2,9 @@ package btclient;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.*;
+import java.util.Timer;
+import java.util.TimerTask;
+
 import javafx.application.Platform;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
@@ -65,7 +67,11 @@ public class Controller {
 			double x = (double)downloaded / tor.getTotalSize();
 			setProgress((int)(x*100) + "." + (int)(x*1000)%10 + "%");
 			
-			setDownloaded(downloaded / (1 << 20) + "." + downloaded / 1024 % 1024 * 10 / 1024 + "MB");
+			if(downloaded < (1 << 30)) {
+				setDownloaded(downloaded / (1 << 20) + "." + downloaded / 1024 % 1024 * 10 / 1024 + "MB");
+			} else {
+				setDownloaded(downloaded / (1 << 30) + "." + downloaded / (1 << 20) % 1024 * 10 / 1024 + "GB");
+			}
 			setPeers(tor.getPeersCount());
 
 			if(downloadSpeed < 1000 * 1000) {
@@ -177,23 +183,32 @@ public class Controller {
 	
 	@FXML
 	private TableView<TorrentEntry> table;
+	@FXML
+	private TableColumn<TorrentEntry, String> colName;
+	@FXML
+	private TableColumn<TorrentEntry, String> colProgress;
+	@FXML
+	private TableColumn<TorrentEntry, String> colDownloaded;
+	@FXML
+	private TableColumn<TorrentEntry, Integer> colPeers;
+	@FXML
+	private TableColumn<TorrentEntry, String> colDownloadSpeed;
+	@FXML
+	private TableColumn<TorrentEntry, String> colUploadSpeed;
 	
-	public TableColumn<TorrentEntry, String> colName;
-	public TableColumn<TorrentEntry, String> colProgress;
-	public TableColumn<TorrentEntry, String> colDownloaded;
-	public TableColumn<TorrentEntry, Integer> colPeers;
-	public TableColumn<TorrentEntry, String> colDownloadSpeed;
-	public TableColumn<TorrentEntry, String> colUploadSpeed;
+	@FXML
+	private MenuItem openItem;
+	@FXML
+	private MenuItem newItem;
 	
-	public MenuItem openItem;
+	private Timer timer;
 	
 	@FXML
 	private void initialize() 
 	{
+		BitTorrentClient.setController(this);
 		serializer = new Serializer();
 		torrents = FXCollections.observableArrayList();
-		BitTorrentClient.setSerializer(serializer);
-		BitTorrentClient.setTorrents(torrents);
 		Torrent.setSerializer(serializer);
 		
 		for(Torrent tor : serializer.loadTorrents())
@@ -203,7 +218,8 @@ public class Controller {
 		
 		configureTable();
 
-		new Timer().schedule(new TimerTask() {
+		timer = new Timer();
+		timer.schedule(new TimerTask() {
 
 			@Override
 			public void run() 
@@ -234,6 +250,14 @@ public class Controller {
 			}
 		});
 	}
+	
+	public void stop()
+	{
+		timer.cancel();
+		for(Controller.TorrentEntry entry : torrents)
+			entry.tor.stop();
+		serializer.stop();
+	}
 
 	private void configureTable() 
 	{
@@ -249,32 +273,8 @@ public class Controller {
 
 	}
 	
-	public void startSelected(ActionEvent actionEvent)
-	{
-		for(TorrentEntry entry : table.getSelectionModel().getSelectedItems()) {
-			entry.tor.start();
-		}
-		table.requestFocus();
-	}
-	
-	public void stopSelected(ActionEvent actionEvent)
-	{
-		for(TorrentEntry entry : table.getSelectionModel().getSelectedItems()) {
-			entry.tor.stop();
-		}
-		table.requestFocus();
-	}
-	
-	public void deleteSelected(ActionEvent actionEvent)
-	{
-		for(TorrentEntry entry : table.getSelectionModel().getSelectedItems()) {
-			entry.tor.remove();
-			torrents.remove(entry);
-		}
-		table.requestFocus();
-	}
-
-	public void openTorrent(ActionEvent actionEvent) 
+	@FXML
+	private void openTorrent(ActionEvent actionEvent) 
 	{
 		FileChooser fileChooser = new FileChooser();
 		fileChooser.setTitle("Choose Torrent File");
@@ -298,5 +298,39 @@ public class Controller {
 		} catch (IOException e) {
 			System.err.println(e.getMessage());
 		}
+	}
+	
+	@FXML
+	private void newTorrent(ActionEvent actionEvent)
+	{
+		
+	}
+	
+	@FXML
+	private void startSelected(ActionEvent actionEvent)
+	{
+		for(TorrentEntry entry : table.getSelectionModel().getSelectedItems()) {
+			entry.tor.start();
+		}
+		table.requestFocus();
+	}
+	
+	@FXML
+	private void stopSelected(ActionEvent actionEvent)
+	{
+		for(TorrentEntry entry : table.getSelectionModel().getSelectedItems()) {
+			entry.tor.stop();
+		}
+		table.requestFocus();
+	}
+	
+	@FXML
+	public void deleteSelected(ActionEvent actionEvent)
+	{
+		for(TorrentEntry entry : table.getSelectionModel().getSelectedItems()) {
+			entry.tor.remove();
+			torrents.remove(entry);
+		}
+		table.requestFocus();
 	}
 }
