@@ -490,4 +490,32 @@ public class Pieces {
 		
 		return true;
 	}
+
+	public void verifyFromLocalData() 
+	{
+		for(int i = 0; i < piecesCount; ++i) {
+			try {
+				byte[] bytes = fragmentSaver.readFrag(i*pieceLength, getPieceLength(i));
+				MessageDigest md = MessageDigest.getInstance("SHA-1");
+				byte[] hash = md.digest(bytes);
+				
+				if(Arrays.equals(hash, p[i].hash)) {
+					verified.set(i);
+					
+					synchronized(p[i]) {
+						p[i].state = PieceState.VERIFIED;
+					}
+									
+					++piecesDownloadedCount;
+					verifiedDownloadCount += getPieceLength(i);
+					
+					if(piecesDownloadedCount == piecesCount)
+						tor.setCompleted();
+				}
+				
+			} catch(NoSuchAlgorithmException e) {
+				
+			}
+		}
+	}
 }

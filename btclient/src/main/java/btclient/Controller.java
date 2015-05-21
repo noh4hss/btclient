@@ -341,7 +341,18 @@ public class Controller {
 	@FXML
 	private void newTorrent(ActionEvent actionEvent)
 	{
+		FileChooser fileChooser = new FileChooser();
+		fileChooser.setInitialDirectory(new File(System.getProperty("user.home")));
 		
+		File file = fileChooser.showOpenDialog(null);
+		if (file == null) {
+			System.err.println("no file selected");
+			return;
+		}
+		
+		Torrent tor = TorrentMaker.createTorrent(file);
+		if(tor != null)
+			torrents.add(new TorrentEntry(tor));
 	}
 	
 	@FXML

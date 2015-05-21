@@ -191,7 +191,14 @@ public class Torrent {
 
 	public boolean init(ObjectInputStream in) 
 	{
-		return pieces.init(in);
+		try {
+			downloadDirectory = (String)in.readObject();
+			return pieces.init(in);
+
+		} catch (IOException | ClassNotFoundException e) {
+			e.printStackTrace();
+			return false;
+		} 
 	}
 	
 	public boolean start()
@@ -587,7 +594,13 @@ public class Torrent {
 
 	public boolean save(ObjectOutputStream out) 
 	{
-		return pieces.save(out);
+		try {
+			out.writeObject(downloadDirectory);
+			return pieces.save(out);
+		} catch(IOException e) {
+			e.printStackTrace();
+			return false;
+		}
 	}
 	
 	public static void setSerializer(Serializer serializer)
@@ -698,5 +711,10 @@ public class Torrent {
 	public boolean isStreaming() 
 	{
 		return streaming;
+	}
+
+	public void verifyFromLocalData() 
+	{
+		pieces.verifyFromLocalData();	
 	}
 }

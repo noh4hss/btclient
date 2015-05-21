@@ -15,28 +15,42 @@ import java.util.Map;
 public class TorrentMaker {
 	
 	
-	public static Torrent createTorrent(String path, String dst)
-	{
-		File file = new File(path);
-		if(!file.exists()) {
-			System.err.println(file.getAbsolutePath() + "does not exist");
+	public static Torrent createTorrent(File src)
+	{		
+		if(!src.exists()) {
+			System.err.println(src.getAbsolutePath() + "does not exist");
 			return null;
 		}
 		
 		Map<String, Object> root = new HashMap<>();
-		root.put("info", createInfoDictionary(file));
+		root.put("info", createInfoDictionary(src));
 		root.put("announce-list", createAnnounceList());
-		
+
 		byte[] bencoding = BeObject.encode(root);
+		
+		String srcName = src.getName();
+		String dstName = srcName;
+		int i = dstName.lastIndexOf('.');
+		if(i == -1) {
+			dstName += ".torrent";
+		} else {
+			dstName = dstName.substring(0, i) + ".torrent";
+		}
+		
+		
+		File dst = new File(src.getParent() + File.separator + dstName);
 		try(FileOutputStream out = new FileOutputStream(dst)) {
 			out.write(bencoding);
 		} catch(IOException e) {
 			e.printStackTrace();
 			return null;
 		}
-		
+				
 		try {
-			return new Torrent(new File(dst));
+			Torrent tor =  new Torrent(dst);
+			tor.setDownloadDirectory(src.getParent());
+			tor.verifyFromLocalData();
+			return tor;
 		} catch(IOException e) {
 			e.printStackTrace();
 			return null;
@@ -143,7 +157,7 @@ public class TorrentMaker {
 		for(String url : trackersUrl) {
 			List<Object> tier = new ArrayList<>(1);
 			tier.add(url);
-			announceList.addAll(tier);
+			announceList.add(tier);
 		}
 		return announceList;
 	}
