@@ -12,6 +12,9 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.channels.*;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -77,6 +80,8 @@ public class Torrent {
 	private volatile boolean completed;
 	
 	private boolean uploadOn = true;
+	
+	private Selector selector;
 	
 	public Torrent(File file) throws IOException
 	{
@@ -227,11 +232,16 @@ public class Torrent {
 		
 		pieces.init();
 		
+		try {
+			selector = Selector.open();
+		} catch(IOException e) {
+			System.err.println(this + "Selector.open() failed: " + e.getMessage());
+			return false;
+		}
+		
 		fragmentSaver.start();
-		peerConnecter.start();
-		announcer.start();
-		peerListener.start();
 		peerManager.start();
+		announcer.start();
 		
 		return true;
 	}
@@ -250,16 +260,7 @@ public class Torrent {
 		} catch(IOException e) {		
 		}
 		
-		peerListener.stop();
-		peerConnecter.stop();
 		peerManager.stop();
-		
-		synchronized(peers) {
-			for(Peer peer : peers)
-				peer.closeConnection();
-			peers.clear();
-		}
-		
 		fragmentSaver.stop();
 	}
 	
@@ -283,62 +284,6 @@ public class Torrent {
 	}
 	
 	
-	private TorrentWorker peerConnecter = new TorrentWorker() {
-		private Thread mainThread;
-		
-		@Override
-		public void start() 
-		{
-			mainThread = new Thread(new Runnable() {
-				
-				@Override
-				public void run() 
-				{
-					while(!Thread.currentThread().isInterrupted()) {
-						
-						if(candidatePeers.isEmpty() || peers.size() >= maxPeers) {
-							try {
-								Thread.sleep(1000);
-							} catch(InterruptedException e) {
-								return;
-							}
-							continue;
-						}
-						
-						InetSocketAddress addr = candidatePeers.get(0);
-						candidatePeers.remove(0);
-						if(peersAddresses.contains(addr) || blacklist.contains(addr.getAddress()))
-							continue;
-						peersAddresses.add(addr);
-						
-						Peer peer = new Peer(Torrent.this, addr);
-						if(streaming)
-							peer.enableStreaming();
-						synchronized(peers) {
-							peers.add(peer);
-						}
-						peer.start();
-					}
-				}
-			});
-			
-			mainThread.start();
-		}
-
-		@Override
-		public void stop() 
-		{
-			mainThread.interrupt();
-			try {
-				mainThread.join();
-			} catch(InterruptedException e) {
-			}
-		}
-		
-	};
-	
-
-	
 	private TorrentWorker peerManager = new TorrentWorker() {
 		private Thread mainThread;
 		
@@ -352,23 +297,73 @@ public class Torrent {
 				{
 					while(!Thread.currentThread().isInterrupted()) {
 						try {
-							Thread.sleep(1000);
-						} catch(InterruptedException e) {
-							return;
+							selector.select(1000);
+						} catch (IOException e) {
+							System.err.println(Torrent.this + "select() failed: " + e.getMessage());
+							break;
+						}
+						Set<SelectionKey> keys = selector.selectedKeys();
+						
+						Iterator<SelectionKey> it = keys.iterator();
+						while(it.hasNext()) {
+							SelectionKey key = it.next();
+							if((key.interestOps() & SelectionKey.OP_CONNECT) != 0) {
+								if(peers.size() < maxPeers) {
+									peers.add(new Peer(Torrent.this, key));
+								} else {
+									try {
+										((SocketChannel)key.channel()).close();
+									} catch (IOException e) {
+									}
+								}
+							} else {
+								Peer peer = (Peer)key.attachment();
+								peer.process();
+							}
+							
+							it.remove();
+						}
+						
+						removeUnconnectedPeers();
+						
+						while(peers.size() < maxPeers && !candidatePeers.isEmpty()) {
+							InetSocketAddress addr = candidatePeers.get(0);
+							candidatePeers.remove(0);
+							if(peersAddresses.contains(addr) || blacklist.contains(addr.getAddress()))
+								continue;
+							peersAddresses.add(addr);
+							
+							try {
+								SocketChannel channel = SocketChannel.open();
+								channel.configureBlocking(false);
+								channel.connect(addr);
+								channel.register(selector, SelectionKey.OP_CONNECT);
+							} catch (IOException e) {
+								continue;
+							}
+							
+							
 						}
 						
 						if(!pieces.isEndGameOn() && pieces.getFreePiecesCount() == 0 && !completed) 
 							pieces.startEndGame();
-						
-						synchronized(peers) {
-							Iterator<Peer> it = peers.iterator();
-							while(it.hasNext()) {
-								Peer peer = it.next();
-								if(peer.isClosed()) {
-									it.remove();
-									peersAddresses.remove(peer.getAddress());
-								}
-							}
+					}
+					
+					synchronized(peers) {
+						for(Peer peer : peers)
+							peer.endConnection();
+						peers.clear();
+					}
+				}
+
+				private void removeUnconnectedPeers() 
+				{
+					synchronized(peers) {
+						Iterator<Peer> it = peers.iterator();
+						while(it.hasNext()) {
+							Peer peer = it.next();
+							if(!peer.isConnected())
+								it.remove();
 						}
 					}
 				}
@@ -389,71 +384,6 @@ public class Torrent {
 		}
 		
 	};
-	
-	private TorrentWorker peerListener = new TorrentWorker() {
-		private Thread mainThread;
-		
-		@Override
-		public void start() 
-		{
-			mainThread = new Thread(new Runnable() {
-
-				@Override
-				public void run() 
-				{					
-					while(!Thread.currentThread().isInterrupted()) {						
-						
-						if(getPeersCount() >= maxPeers) {
-							try {
-								Thread.sleep(1000);
-							} catch(InterruptedException e) {
-								return;
-							}
-							continue;
-						}
-						
-						try {
-							Socket sock = listenSock.accept();
-							if(blacklist.contains(sock.getInetAddress())) {
-								try {
-									sock.close();
-								} catch(IOException e) {
-									
-								}
-							}
-							
-							Peer peer = new Peer(Torrent.this, sock);
-							synchronized(peers) {
-								peers.add(peer);
-							}
-							peersAddresses.add(new InetSocketAddress(sock.getInetAddress(), sock.getPort()));
-							peer.start();
-							
-						} catch(IOException e) {
-							return;
-						}
-					}
-					
-				}					
-			});
-			
-			mainThread.start();
-		}
-
-		@Override
-		public void stop() 
-		{
-			mainThread.interrupt();
-			try {
-				mainThread.join();
-			} catch(InterruptedException e) {
-				
-			}
-		}
-		
-	};
-
-	
 	
 	void addPeers(List<InetSocketAddress> newPeers)
 	{
@@ -468,7 +398,7 @@ public class Torrent {
 		synchronized(peers) {
 			for(Peer peer : peers) {
 				if(peer.getInetAddress().equals(addr))
-					peer.closeConnection();
+					peer.endConnection();
 			}
 		}
 		blacklist.add(addr);
@@ -716,5 +646,11 @@ public class Torrent {
 	public void verifyFromLocalData() 
 	{
 		pieces.verifyFromLocalData();	
+	}
+	
+	@Override
+	public String toString()
+	{
+		return "Torrent(" + getName() + "): ";
 	}
 }

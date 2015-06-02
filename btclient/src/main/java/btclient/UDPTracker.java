@@ -49,21 +49,18 @@ public class UDPTracker extends Tracker {
 	@Override
 	public List<InetSocketAddress> announce()
 	{
-		if(sock == null) {
-			try {
-				sock = new DatagramSocket();
-			} catch(SocketException e) {
-				return null;
-			}
+		try {
+			sock = new DatagramSocket();
+		} catch(SocketException e) {
+			e.printStackTrace();
+			return null;
 		}
 		
-		if(!sock.isConnected()) {
-			// TODO add timeout to DNS lookup
-			try {
-				sock.connect(InetAddress.getByName(host), port);
-			} catch(UnknownHostException e) {
-				return null;
-			}
+		// TODO add timeout to DNS lookup
+		try {
+			sock.connect(InetAddress.getByName(host), port);
+		} catch(UnknownHostException e) {
+			return null;
 		}
 		
 		try {
@@ -86,7 +83,7 @@ public class UDPTracker extends Tracker {
 		
 		DatagramPacket request = new DatagramPacket(buf.array(), 16);
 		DatagramPacket response = new DatagramPacket(new byte[1024], 1024);
-		for(int i = 0; i < MAX_TRIES; ++i) {
+		for(int i = 0; i < MAX_TRIES && !sock.isClosed(); ++i) {
 			sock.send(request);
 			try {
 				sock.setSoTimeout(RECEIVE_TIMEOUT);
@@ -140,7 +137,7 @@ public class UDPTracker extends Tracker {
 	
 		DatagramPacket request = new DatagramPacket(buf.array(), buf.position());
 		DatagramPacket response = new DatagramPacket(new byte[1024], 1024);
-		for(int i = 0; i < MAX_TRIES; ++i) {
+		for(int i = 0; i < MAX_TRIES && !sock.isClosed(); ++i) {
 			sock.send(request);
 			try {
 				sock.setSoTimeout(RECEIVE_TIMEOUT);

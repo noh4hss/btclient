@@ -2,6 +2,7 @@ package btclient;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -390,7 +391,8 @@ public class Controller {
 	@FXML
 	public void deleteSelected(ActionEvent actionEvent)
 	{
-		for(TorrentEntry entry : table.getSelectionModel().getSelectedItems()) {
+		
+		for(TorrentEntry entry : new ArrayList<TorrentEntry>(table.getSelectionModel().getSelectedItems())) {
 			entry.tor.remove();
 			torrents.remove(entry);
 		}

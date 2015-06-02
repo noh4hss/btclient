@@ -27,7 +27,7 @@ public class Announcer implements TorrentWorker {
 			public void run() 
 			{				
 				announceStarted();
-								
+				
 				while(!Thread.currentThread().isInterrupted()) {
 					for(Tracker tr : trackers) { 
 						if(Thread.currentThread().isInterrupted())
@@ -42,7 +42,7 @@ public class Announcer implements TorrentWorker {
 						break;
 					}
 				}
-								
+												
 				announceStopped();
 			}
 			
@@ -64,10 +64,7 @@ public class Announcer implements TorrentWorker {
 				@Override
 				public void run() 
 				{
-					while(true) {
-						if(mainThread.isInterrupted())
-							break;
-						
+					while(!mainThread.isInterrupted()) {
 						Tracker tr;
 						synchronized(trackers) {
 							if(trackerIndex == trackers.size())
@@ -90,6 +87,7 @@ public class Announcer implements TorrentWorker {
 			try {
 				announceThreads[i].join();
 			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
 			}
 		}
 	}
@@ -130,6 +128,7 @@ public class Announcer implements TorrentWorker {
 			try {
 				announceThreads[i].join();
 			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
 			}
 		}
 	}
