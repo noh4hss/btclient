@@ -60,7 +60,7 @@ public class Torrent {
 	
 	// counting peers that received handshake
 	private int maxPeers = 80;
-	private AtomicInteger peersCount;
+	private volatile int peersCount;
 	
 	private List<Peer> peers;
 	private Set<InetSocketAddress> peersAddresses;
@@ -143,7 +143,7 @@ public class Torrent {
 			completed = false;
 			
 			peers = Collections.synchronizedList(new LinkedList<Peer>());
-			peersCount = new AtomicInteger(0);
+			peersCount = 0;
 		} catch(Exception e) {
 			throw new IOException("invalid file format");
 		}
@@ -228,7 +228,7 @@ public class Torrent {
 		candidatePeers = Collections.synchronizedList(new LinkedList<InetSocketAddress>());
 		blacklist = Collections.synchronizedSet(new HashSet<InetAddress>());
 		
-		peersCount.set(0);
+		peersCount = 0;
 		
 		pieces.init();
 		
@@ -421,7 +421,7 @@ public class Torrent {
 	
 	public int getPeersCount()
 	{
-		return peersCount.get();
+		return peersCount;
 	}
 	
 	private void setDefaultDownloadDirectory()
@@ -620,12 +620,12 @@ public class Torrent {
 
 	public void incrementPeersCount() 
 	{
-		peersCount.incrementAndGet();
+		++peersCount;
 	}
 
 	public void decrementPeersCount() 
 	{
-		peersCount.decrementAndGet();
+		--peersCount;
 	}
 
 	public boolean isUploadOn()

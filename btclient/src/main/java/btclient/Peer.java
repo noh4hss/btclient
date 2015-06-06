@@ -137,6 +137,9 @@ public class Peer {
 	
 	public void process()
 	{
+		if(!connected)
+			return;
+		
 		try {
 			if(receivedHandshake && key.isWritable()) {
 				sendMessages();
@@ -173,6 +176,8 @@ public class Peer {
 			receivedHandshake = true;
 			recvBuffer.clear();
 			recvBuffer.limit(0);
+			
+			tor.incrementPeersCount();
 			
 			System.err.println(this + "received handshake");
 			
@@ -369,7 +374,7 @@ public class Peer {
 		if(!sendUnchoke())
 			return;
 		
-		if(requestedFrags.size() < MAX_REQUESTED_FRAGS && !sendRequests())
+		if(!peerChoking && requestedFrags.size() < MAX_REQUESTED_FRAGS && !sendRequests())
 			return;
 			
 		if(pieces.isEndGameOn() && !sendCancels())
@@ -697,6 +702,9 @@ public class Peer {
 		if(!connected)
 			return;
 			
+		if(receivedHandshake)
+			tor.decrementPeersCount();
+		
 		connected = false;
 		key.cancel();
 		try {

@@ -106,6 +106,8 @@ public class Pieces {
 		byte[] b = m.get("pieces").getBytes();
 		piecesCount = b.length / 20;
 		lastPieceLength = (int)(totalSize % pieceLength);
+		if(lastPieceLength == 0)
+			lastPieceLength = pieceLength;
 		piecesDownloadedCount = 0;
 		
 		lastFrag = new PieceFrag(piecesCount-1, (lastPieceLength+FRAG_LENGTH-1)/FRAG_LENGTH-1);
@@ -163,8 +165,6 @@ public class Pieces {
 	
 	public void init()
 	{
-		// initializing only from have and verified bitsets
-		
 		freePiecesCount.set(0);
 		
 		for(int i = 0; i < piecesCount; ++i) {
@@ -188,6 +188,7 @@ public class Pieces {
 				p[i].state = PieceState.FREE;
 				freePiecesCount.incrementAndGet();
 			} else {
+				System.err.println(p[i].writeCount);
 				p[i].state = PieceState.DOWNLOADED;
 				fragmentSaver.readPiece(i);
 			}

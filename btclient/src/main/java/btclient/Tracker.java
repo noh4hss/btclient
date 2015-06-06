@@ -55,6 +55,11 @@ public abstract class Tracker {
 		return currentEvent.getValue();
 	}
 	
+	protected String getCurrentEventString()
+	{
+		return currentEvent.toString().toLowerCase();
+	}
+	
 	public void reset()
 	{
 		startedSent = false;
@@ -127,6 +132,11 @@ public abstract class Tracker {
 	protected long getLeft()
 	{
 		return tor.getLeftCount();
+	}
+	
+	protected int getNumWant()
+	{
+		return 100;
 	}
 
 	// interval is in seconds

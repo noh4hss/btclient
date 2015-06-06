@@ -19,7 +19,7 @@ import java.util.Random;
 public class UDPTracker extends Tracker {
 	private String host;
 	private int port;
-	private DatagramSocket sock;
+	private volatile DatagramSocket sock;
 	
 	private static final int MAX_TRIES = 3;
 	private static final int RECEIVE_TIMEOUT = 5000;
