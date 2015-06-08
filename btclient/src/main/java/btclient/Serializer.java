@@ -54,7 +54,7 @@ public class Serializer implements TorrentWorker {
 					saveTorrent(torrents.get(i));
 				}
 			}
-		});
+		}, "serializer");
 		
 		mainThread.start();
 	}

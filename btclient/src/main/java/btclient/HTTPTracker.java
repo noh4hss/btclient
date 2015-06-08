@@ -2,14 +2,18 @@ package btclient;
 
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.MalformedURLException;
 import java.net.Socket;
 import java.net.URL;
+import java.net.URLEncoder;
+import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -60,12 +64,25 @@ public class HTTPTracker extends Tracker {
 				throw new IOException("tracker response too long");
 			
 			InputStream in = conn.getInputStream();
-			int off = 0;
-			while(off < len) {
-				int n = in.read(buf, off, (int)len-off);
-				if(n == -1)
-					throw new IOException();
-				off += n;
+			if(len != -1) {
+				int off = 0;
+				while(off < len) {
+					int n = in.read(buf, off, (int)len-off);
+					if(n == -1)
+						throw new IOException();
+					off += n;
+				}
+			} else {
+				int off = 0;
+				while(off < buf.length) {
+					int n = in.read(buf, off, buf.length-off);
+					if(n == -1)
+						break;
+					off += n;
+				}
+				
+				if(off == buf.length && in.read(buf, 0, 0) != -1)
+					throw new IOException("tracker response too long");
 			}
 			
 			in.close();
@@ -127,12 +144,26 @@ public class HTTPTracker extends Tracker {
 			
 		} catch(ParsingError | Exception e) {
 			e.printStackTrace();
+			try {
+				System.err.println(InetAddress.getByName(url.getHost()));
+			} catch (UnknownHostException e2) {
+				// TODO Auto-generated catch block
+				e2.printStackTrace();
+			}
+			try {
+				FileOutputStream out = new FileOutputStream("/home/noh4h_ss/wtf");
+				out.write(b);
+				out.close();
+			} catch (IOException e1) {
+				// TODO Auto-generated catch block
+				e1.printStackTrace();
+			}
 			return null;
 		}
 		
 	}
 
-	private String getCgiArgsString() 
+	private String getCgiArgsString()
 	{
 		ByteBuffer buf = ByteBuffer.allocate(1000);
 		buf.put((byte)'?');
@@ -178,12 +209,12 @@ public class HTTPTracker extends Tracker {
 	public void endAnnounce() 
 	{
 		if(conn != null) {
-			conn.disconnect();
 			try {
 				conn.getOutputStream().close();
 				conn.getInputStream().close();
 			} catch (IOException e) {
 			}
+			conn.disconnect();
 		}
 	}
 }

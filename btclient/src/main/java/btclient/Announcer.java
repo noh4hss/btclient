@@ -7,6 +7,7 @@ public class Announcer implements TorrentWorker {
 	private List<Tracker> trackers;
 	
 	private Thread mainThread;
+	private volatile boolean stopped;
 	private volatile boolean joining;
 	
 	public Announcer(Torrent tor, List<Tracker> trackers)
@@ -22,15 +23,16 @@ public class Announcer implements TorrentWorker {
 		for(Tracker tr : trackers)
 			tr.reset();
 		
+		stopped = false;
 		mainThread = new Thread(new Runnable() {
 			@Override
 			public void run() 
 			{				
 				announceStarted();
 				
-				while(!Thread.currentThread().isInterrupted()) {
+				while(!stopped) {
 					for(Tracker tr : trackers) { 
-						if(Thread.currentThread().isInterrupted())
+						if(stopped)
 							break;
 						tor.addPeers(tr.announceNone());
 					}
@@ -38,21 +40,19 @@ public class Announcer implements TorrentWorker {
 					try {
 						Thread.sleep(60 * 1000);
 					} catch(InterruptedException e) {
-						Thread.currentThread().interrupt();
-						break;
 					}
 				}
 												
 				announceStopped();
 			}
 			
-		});
+		}, tor + " announcer");
 		
 		mainThread.start();
 	}
 
 	private int trackerIndex;
-	private static final int MAX_ANNOUNCE_THREADS = 10;
+	private static final int MAX_ANNOUNCE_THREADS = 4;
 	
 	private void announceStarted()
 	{
@@ -64,7 +64,7 @@ public class Announcer implements TorrentWorker {
 				@Override
 				public void run() 
 				{
-					while(!mainThread.isInterrupted()) {
+					while(!stopped) {
 						Tracker tr;
 						synchronized(trackers) {
 							if(trackerIndex == trackers.size())
@@ -84,10 +84,12 @@ public class Announcer implements TorrentWorker {
 		
 
 		for(int i = 0; i < MAX_ANNOUNCE_THREADS; ++i) {
-			try {
-				announceThreads[i].join();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
+			while(true) {
+				try {
+					announceThreads[i].join();
+					break;
+				} catch (InterruptedException e) {
+				}
 			}
 		}
 	}
@@ -125,10 +127,12 @@ public class Announcer implements TorrentWorker {
 		
 
 		for(int i = 0; i < MAX_ANNOUNCE_THREADS; ++i) {
-			try {
-				announceThreads[i].join();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
+			while(true) {
+				try {
+					announceThreads[i].join();
+					break;
+				} catch (InterruptedException e) {
+				}
 			}
 		}
 	}
@@ -142,6 +146,7 @@ public class Announcer implements TorrentWorker {
 	@Override
 	public void stop() 
 	{
+		stopped = true;
 		mainThread.interrupt();
 	}
 	

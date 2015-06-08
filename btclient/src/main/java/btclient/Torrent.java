@@ -11,10 +11,7 @@ import java.io.ObjectOutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
-import java.net.Socket;
 import java.nio.channels.*;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.Selector;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -26,7 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 
@@ -52,13 +48,12 @@ public class Torrent {
 	private byte[] peerId;
 	
 	private long totalSize;
-	private AtomicLong downloadCount;
-	private AtomicLong uploadCount;
+	private volatile long downloadCount;
+	private volatile long uploadCount;
 	
 	private ServerSocket listenSock;
 	private int listenPort;
 	
-	// counting peers that received handshake
 	private int maxPeers = 80;
 	private volatile int peersCount;
 	
@@ -80,6 +75,14 @@ public class Torrent {
 	private volatile boolean completed;
 	
 	private boolean uploadOn = true;
+	
+	private volatile int maxDownloadSpeed;
+	private volatile int maxUploadSpeed;
+	
+	private volatile long lastDownloadCount;
+	private volatile long lastUploadCount;
+	
+	private volatile long lastQueryTime;
 	
 	private Selector selector;
 	
@@ -132,8 +135,8 @@ public class Torrent {
 			out.write((x & 0xFF000000) >>> 24);
 			System.arraycopy(out.toByteArray(), 0, peerId, 0, out.size());
 			
-			uploadCount = new AtomicLong(0);
-			downloadCount = new AtomicLong(0);
+			uploadCount = 0;
+			downloadCount = 0;
 						
 			state = State.IDLE;
 			
@@ -144,6 +147,14 @@ public class Torrent {
 			
 			peers = Collections.synchronizedList(new LinkedList<Peer>());
 			peersCount = 0;
+			
+			maxDownloadSpeed = 0;
+			maxUploadSpeed = 0;
+			
+			lastDownloadCount = 0;
+			lastUploadCount = 0;
+			
+			lastQueryTime = System.currentTimeMillis();
 		} catch(Exception e) {
 			throw new IOException("invalid file format");
 		}
@@ -242,6 +253,7 @@ public class Torrent {
 		fragmentSaver.start();
 		peerManager.start();
 		announcer.start();
+
 		
 		return true;
 	}
@@ -299,13 +311,24 @@ public class Torrent {
 						try {
 							selector.select(1000);
 						} catch (IOException e) {
+							if(Thread.currentThread().isInterrupted())
+								break;
 							System.err.println(Torrent.this + "select() failed: " + e.getMessage());
 							break;
 						}
 						Set<SelectionKey> keys = selector.selectedKeys();
 						
 						Iterator<SelectionKey> it = keys.iterator();
-						while(it.hasNext()) {
+						while(!Thread.currentThread().isInterrupted() && it.hasNext()) {
+							if(maxDownloadSpeedExceeded()) {
+								try {
+									Thread.sleep(Math.max(0, 1000 - (System.currentTimeMillis()-lastQueryTime)));
+								} catch (InterruptedException e) {
+									Thread.currentThread().interrupt();
+									break;
+								}
+							}
+							
 							SelectionKey key = it.next();
 							if((key.interestOps() & SelectionKey.OP_CONNECT) != 0) {
 								if(peers.size() < maxPeers) {
@@ -326,7 +349,7 @@ public class Torrent {
 						
 						removeUnconnectedPeers();
 						
-						while(peers.size() < maxPeers && !candidatePeers.isEmpty()) {
+						while(!Thread.currentThread().isInterrupted() && peers.size() < maxPeers && !candidatePeers.isEmpty()) {
 							InetSocketAddress addr = candidatePeers.get(0);
 							candidatePeers.remove(0);
 							if(peersAddresses.contains(addr) || blacklist.contains(addr.getAddress()))
@@ -348,7 +371,7 @@ public class Torrent {
 						if(!pieces.isEndGameOn() && pieces.getFreePiecesCount() == 0 && !completed) 
 							pieces.startEndGame();
 					}
-					
+										
 					synchronized(peers) {
 						for(Peer peer : peers)
 							peer.endConnection();
@@ -367,7 +390,7 @@ public class Torrent {
 						}
 					}
 				}
-			});
+			}, Torrent.this + " peer manager");
 			
 			mainThread.start();
 		}
@@ -416,7 +439,7 @@ public class Torrent {
 
 	public void increaseDownloaded(int length) 
 	{
-		downloadCount.getAndAdd(length);
+		downloadCount += length;
 	}
 	
 	public int getPeersCount()
@@ -499,17 +522,20 @@ public class Torrent {
 	
 	public long getDownloadCount()
 	{
-		return downloadCount.get();
+		lastQueryTime = System.currentTimeMillis();
+		lastDownloadCount = downloadCount;
+		return downloadCount;
 	}
 	
 	public long getUploadCount()
 	{
-		return uploadCount.get();
+		lastUploadCount = uploadCount;
+		return uploadCount;
 	}
 	
 	public void increaseUploadCount(long delta)
 	{
-		uploadCount.addAndGet(delta);
+		uploadCount += delta;
 	}
 	
 	public long getLeftCount()
@@ -652,5 +678,39 @@ public class Torrent {
 	public String toString()
 	{
 		return "Torrent(" + getName() + "): ";
+	}
+
+	public String getStatus() 
+	{
+		if(state == State.IDLE)
+			return "Idle";
+		if(state == State.RUNNING)
+			return "Dowloading";
+		return "Seeding";
+	}
+	
+	public int getMaxDownloadSpeed()
+	{
+		return maxDownloadSpeed;
+	}
+	
+	public void setMaxDownloadSpeed(int maxDownloadSpeed)
+	{
+		this.maxDownloadSpeed = maxDownloadSpeed;
+	}
+	
+	public int getMaxUploadSpeed()
+	{
+		return maxUploadSpeed;
+	}
+	
+	public void setMaxUploadSpeed(int maxUploadSpeed)
+	{
+		this.maxUploadSpeed = maxUploadSpeed;
+	}
+	
+	public boolean maxDownloadSpeedExceeded()
+	{
+		return maxDownloadSpeed > 0 && downloadCount - lastDownloadCount >= maxDownloadSpeed;
 	}
 }

@@ -127,7 +127,7 @@ public class FragmentSaver {
 					}
 				}
 			}	
-		});
+		}, tor + " fragment saver");
 		
 		mainThread.start();
 	}

@@ -114,7 +114,6 @@ public class BeObject {
 	
 	private static BeObject parse(byte[] b, int[] pos)
 	{
-		BeObject bo = new BeObject();
 		if(b[pos[0]] == 'i')
 			return parseLong(b, pos);
 		if(b[pos[0]] == 'l')

@@ -14,12 +14,49 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 
 public class UDPTracker extends Tracker {
 	private String host;
 	private int port;
 	private volatile DatagramSocket sock;
+	
+	private static class LookupService {
+        ExecutorService executor;
+
+        private LookupService() {
+            executor = Executors.newSingleThreadExecutor(new ThreadFactory() {
+                public Thread newThread(Runnable r) {
+                    Thread t = new Thread(r);
+                    t.setDaemon(true);
+                    return t;
+                }
+            });
+        }
+
+        static LookupService create() {
+            return new LookupService();   
+        }
+
+        Future<InetAddress> getByName(final String host) {
+            FutureTask<InetAddress> future = new FutureTask<>(new Callable<InetAddress>() {
+                public InetAddress call() throws UnknownHostException {
+                    return InetAddress.getByName(host);
+                }
+            });
+            executor.execute(future);
+            return future;
+        }
+    }
 	
 	private static final int MAX_TRIES = 3;
 	private static final int RECEIVE_TIMEOUT = 5000;
@@ -56,12 +93,21 @@ public class UDPTracker extends Tracker {
 			return null;
 		}
 		
-		// TODO add timeout to DNS lookup
+		LookupService service = LookupService.create();
+        Future<InetAddress> future = service.getByName(host);
+        InetAddress addr;
 		try {
-			sock.connect(InetAddress.getByName(host), port);
-		} catch(UnknownHostException e) {
+			addr = future.get(2L, TimeUnit.SECONDS);
+		} catch (InterruptedException e1) {
 			return null;
-		}
+		} catch (ExecutionException e1) {
+			return null;
+		} catch (TimeoutException e1) {
+			return null;
+		} 
+		
+		
+		sock.connect(addr, port);
 		
 		try {
 			long connId = getConnectionId();

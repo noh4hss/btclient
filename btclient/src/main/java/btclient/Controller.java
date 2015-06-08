@@ -3,6 +3,8 @@ package btclient;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -14,14 +16,20 @@ import javafx.collections.ObservableList;
 import javafx.event.ActionEvent;
 import javafx.event.EventHandler;
 import javafx.fxml.FXML;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.ContextMenu;
+import javafx.scene.control.Dialog;
+import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SelectionMode;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
+import javafx.scene.control.ButtonBar.ButtonData;
+import javafx.scene.control.TextField;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
+import javafx.scene.layout.GridPane;
 import javafx.stage.FileChooser;
 
 
@@ -34,6 +42,7 @@ public class Controller {
 		public final Torrent tor;
 		
 		private final SimpleStringProperty name;
+		private final SimpleStringProperty status;
 		private final SimpleStringProperty progress;
 		private final SimpleStringProperty downloaded;
 		private final SimpleIntegerProperty peers;
@@ -48,6 +57,7 @@ public class Controller {
 			this.tor = tor;
 			
 			name = new SimpleStringProperty(tor.getName());
+			status = new SimpleStringProperty();
 			progress = new SimpleStringProperty();
 			downloaded = new SimpleStringProperty();
 			peers = new SimpleIntegerProperty();
@@ -61,6 +71,8 @@ public class Controller {
 		
 		public void updateProperties()
 		{
+			setStatus(tor.getStatus());
+			
 			long downloaded = tor.getVerifiedDownloadCount();
 			long currentDownloadCount = tor.getDownloadCount();
 			long currentUploadCount = tor.getUploadCount();
@@ -108,6 +120,21 @@ public class Controller {
 		public SimpleStringProperty nameProperty() 
 		{
 			return name;
+		}
+		
+		public String getStatus() 
+		{
+			return status.get();
+		}
+
+		public void setStatus(String status) 
+		{
+			this.status.set(status);
+		}
+
+		public SimpleStringProperty statusProperty() 
+		{
+			return status;
 		}
 
 		public String getProgress() 
@@ -191,6 +218,8 @@ public class Controller {
 	@FXML
 	private TableColumn<TorrentEntry, String> colName;
 	@FXML
+	private TableColumn<TorrentEntry, String> colStatus;
+	@FXML
 	private TableColumn<TorrentEntry, String> colProgress;
 	@FXML
 	private TableColumn<TorrentEntry, String> colDownloaded;
@@ -266,19 +295,21 @@ public class Controller {
 	{
 		timer.cancel();
 		for(Controller.TorrentEntry entry : torrents)
-			entry.tor.stop();
+			entry.tor.forceStop();
 		serializer.stop();
 	}
 
 	private void configureTable() 
 	{
 		colName.setCellValueFactory(new PropertyValueFactory<TorrentEntry, String>("name"));
+		colStatus.setCellValueFactory(new PropertyValueFactory<TorrentEntry, String>("status"));
+		colStatus.setStyle("-fx-alignment: CENTER");
 		colProgress.setCellValueFactory(new PropertyValueFactory<TorrentEntry, String>("progress"));
 		colDownloaded.setCellValueFactory(new PropertyValueFactory<TorrentEntry, String>("downloaded"));
 		colPeers.setCellValueFactory(new PropertyValueFactory<TorrentEntry, Integer>("peers"));
 		colDownloadSpeed.setCellValueFactory(new PropertyValueFactory<TorrentEntry, String>("downloadSpeed"));
 		colUploadSpeed.setCellValueFactory(new PropertyValueFactory<TorrentEntry, String>("uploadSpeed"));
-		table.getColumns().setAll(colName, colProgress, colDownloaded, colPeers, colDownloadSpeed, colUploadSpeed);
+		table.getColumns().setAll(colName, colStatus, colProgress, colDownloaded, colPeers, colDownloadSpeed, colUploadSpeed);
 		table.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
 		table.setItems(torrents);
 		
@@ -304,13 +335,17 @@ public class Controller {
 					streamingMenu.setText("Disable Streaming");
 					streamingMenu.setOnAction(e -> tor.disableStreaming());
 				}
-				contextMenu.getItems().addAll(streamingMenu);
+				
+				MenuItem propertiesMenu = new MenuItem("Properties");
+				propertiesMenu.setOnAction(e -> showPropertiesDialog(tor));
+				
+				contextMenu.getItems().addAll(streamingMenu, propertiesMenu);
 
 				contextMenu.show(table, event.getScreenX(), event.getScreenY());
 			}
-	
 		});
 	}
+	
 	
 	@FXML
 	private void openTorrent(ActionEvent actionEvent) 
@@ -405,5 +440,40 @@ public class Controller {
 		for(TorrentEntry entry : torrents)
 			entry.tor.remove();
 		torrents.clear();
+	}
+	
+	private void showPropertiesDialog(Torrent tor) 
+	{
+		Dialog<Map<String, String>> dialog = new Dialog<>();
+		dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+		
+		TextField maxDownloadSpeed = new TextField(Integer.toString(tor.getMaxDownloadSpeed()/1000));
+		TextField maxUploadSpeed = new TextField(Integer.toString(tor.getMaxUploadSpeed()/1000));
+		
+		GridPane grid = new GridPane();
+		grid.add(new Label("Max download speed (Kb/s): "), 0, 0);
+		grid.add(maxDownloadSpeed, 1, 0);
+		grid.add(new Label("Max upload speed (Kb/s): "), 0, 1);
+		grid.add(maxUploadSpeed, 1, 1);
+		dialog.getDialogPane().setContent(grid);
+		
+		
+		dialog.setResultConverter(button -> {
+			if(button == ButtonType.CANCEL)
+				return null;
+			
+			try {
+				tor.setMaxDownloadSpeed(1000 * Integer.parseInt(maxDownloadSpeed.getText()));
+			} catch(NumberFormatException e) {
+			}
+			
+			try {
+				tor.setMaxUploadSpeed(1000 * Integer.parseInt(maxUploadSpeed.getText()));
+			} catch(NumberFormatException e) {
+			}
+			
+			return null;
+		});
+		dialog.show();
 	}
 }

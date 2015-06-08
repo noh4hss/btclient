@@ -44,6 +44,7 @@
         <TableView fx:id="table">
           <columns>
             <TableColumn fx:id="colName" minWidth="200.0" text="Name" />
+            <TableColumn fx:id="colStatus" minWidth="100.0" text="Status" />
             <TableColumn fx:id="colProgress" text="Progress" />
             <TableColumn fx:id="colDownloaded" text="Downloaded" />
             <TableColumn fx:id="colPeers" text="Peers" />

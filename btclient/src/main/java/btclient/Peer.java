@@ -55,6 +55,8 @@ public class Peer {
 	
 	private boolean connected;
 	
+	private int currentRecvMessage;
+	
 	public static final int MAX_REQUESTED_FRAGS = 8;
 	
 	public Peer(Torrent tor, SelectionKey key) 
@@ -112,6 +114,8 @@ public class Peer {
 		recvBuffer.limit(HANDSHAKE_LEN);
 	
 		key.attach(this);
+		
+		currentRecvMessage = -1;
 	}
 	
 	private void sendHandshake()
@@ -148,7 +152,9 @@ public class Peer {
 				receiveMessages();
 			}
 		} catch(IOException e) {
-			System.err.println(this + e.getMessage());
+			if(!(e instanceof ClosedByInterruptException)) {
+				System.err.println(this + e.getMessage());
+			}
 			endConnection();
 		}
 	}
@@ -184,19 +190,25 @@ public class Peer {
 			sendBitfield();
 		}
 		
-		while(true) {
+		while(!tor.maxDownloadSpeedExceeded()) {
 			if(recvBuffer.limit() == 0)
 				recvBuffer.limit(4);
 			
-			channel.read(recvBuffer);
+			int x = channel.read(recvBuffer);
 			if(recvBuffer.position() < 4)
 				return;
 			
 			int curPosition = recvBuffer.position();
 			recvBuffer.position(0);
 			int len = recvBuffer.getInt();
+			if(recvBuffer.hasRemaining()) {
+				currentRecvMessage = recvBuffer.get();
+			}
 			recvBuffer.position(curPosition);
 			recvBuffer.limit(len+4);
+			
+			if(currentRecvMessage == messagePiece)
+				tor.increaseDownloaded(x);
 			
 			if(recvBuffer.hasRemaining())
 				return;
@@ -204,6 +216,7 @@ public class Peer {
 			parseMessage();		
 			recvBuffer.clear();
 			recvBuffer.limit(0);
+			currentRecvMessage = -1;
 		}
 	}
 	
@@ -339,12 +352,9 @@ public class Peer {
 		int length = len-8;
 		Pieces.PieceFrag f = new Pieces.PieceFrag(index, begin/Pieces.FRAG_LENGTH);
 		
-		boolean canceledFrag = false;
 		if(!requestedFrags.remove(f)) {
 			if(!canceledRequests.remove(f)) {
 				throw new IOException("didnt request such fragment");
-			} else {
-				canceledFrag = true;
 			}
 		}
 				
@@ -354,15 +364,14 @@ public class Peer {
 		byte[] block = new byte[length];
 		recvBuffer.get(block);
 		
-		if(!canceledFrag)
-			tor.increaseDownloaded(length);
-		
-		pieces.receivedFragment(f, block);
-		downloadCount += pieces.getFragLength(f);
-		if(downloadCount >= pieces.getPieceLength())
-			oneDownloaded = true;
-		
-		System.err.println(this + "received piece " + index);
+		if(!pieces.haveFrag(f)) {
+			pieces.receivedFragment(f, block);
+			downloadCount += pieces.getFragLength(f);
+			if(downloadCount >= pieces.getPieceLength())
+				oneDownloaded = true;
+			
+			System.err.println(this + "received piece " + index);
+		}
 	}
 	
 	private void sendMessages() throws IOException 
@@ -371,8 +380,10 @@ public class Peer {
 		if(sendBuffer.hasRemaining())
 			return;
 		
-		if(!sendUnchoke())
-			return;
+		if(peerInterested && amChoking) {
+			if(!sendUnchoke())
+				return;
+		}
 		
 		if(!peerChoking && requestedFrags.size() < MAX_REQUESTED_FRAGS && !sendRequests())
 			return;
@@ -380,12 +391,9 @@ public class Peer {
 		if(pieces.isEndGameOn() && !sendCancels())
 			return;
 		
-		while(!verifiedPieces.isEmpty()) {
-			int index = verifiedPieces.poll();
-			if(!sendHaveMsg(index))
-				return;
-		}
-			
+		
+		if(!sendHaveMessages())
+			return;
 		
 		while(true) {
 			Pieces.PeerFrag f = null;
@@ -402,6 +410,23 @@ public class Peer {
 	}
 	
 	
+	private boolean sendHaveMessages() throws IOException
+	{
+		sendBuffer.clear();
+		while(!verifiedPieces.isEmpty() && sendBuffer.remaining() >= 9) {
+			int index = verifiedPieces.poll();
+			sendBuffer.putInt(5);
+			sendBuffer.put((byte)messageHave);
+			sendBuffer.putInt(index);
+			
+			System.err.println(this + "sent have " + index);
+		}
+		
+		sendBuffer.flip();
+		channel.write(sendBuffer);
+		return !sendBuffer.hasRemaining();
+	}
+
 	private void sendBitfield()
 	{
 		int count = pieces.getCount();
@@ -443,18 +468,6 @@ public class Peer {
 		sendBuffer.putInt(0);
 		sendBuffer.flip();
 		channel.write(sendBuffer);
-		return !sendBuffer.hasRemaining();
-	}
-
-	private boolean sendHaveMsg(int index) throws IOException
-	{
-		sendBuffer.clear();
-		sendBuffer.putInt(5);
-		sendBuffer.put((byte)messageHave);
-		sendBuffer.putInt(index);
-		sendBuffer.flip();
-		channel.write(sendBuffer);
-		System.err.println(this + "sent have " + index);
 		return !sendBuffer.hasRemaining();
 	}
 	
