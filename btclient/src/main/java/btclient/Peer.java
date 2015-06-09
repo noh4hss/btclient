@@ -84,7 +84,7 @@ public class Peer {
 		System.err.println(this + "connect successful");
 		
 		connected = true;
-		key.interestOps(SelectionKey.OP_READ | SelectionKey.OP_WRITE);
+		key.interestOps(SelectionKey.OP_READ);
 		
 		pieces = tor.getPieces();
 		piecesCount = pieces.getCount();
@@ -145,11 +145,11 @@ public class Peer {
 			return;
 		
 		try {
-			if(receivedHandshake && key.isWritable()) {
-				sendMessages();
-			}
 			if(key.isReadable()) {
 				receiveMessages();
+			}
+			if(receivedHandshake && key.isWritable()) {
+				sendMessages();
 			}
 		} catch(IOException e) {
 			if(!(e instanceof ClosedByInterruptException)) {
@@ -301,6 +301,8 @@ public class Peer {
 			recvBuffer.get(new byte[len-1]);
 			break;
 		}
+		
+		key.interestOps(key.interestOps() | SelectionKey.OP_WRITE);
 	}
 	
 	private void verifyHandshake() throws IOException
@@ -380,6 +382,11 @@ public class Peer {
 		if(sendBuffer.hasRemaining())
 			return;
 		
+		if(!amInterested) {
+			if(!sendInterested())
+				return;
+		}
+			
 		if(peerInterested && amChoking) {
 			if(!sendUnchoke())
 				return;
@@ -402,14 +409,31 @@ public class Peer {
 			} catch(IndexOutOfBoundsException e) {
 			}
 			if(f == null)
-				return;
+				break;
 		
 			if(!sendFragment(f))
 				return;
-		}				
+		}
+		
+		key.interestOps(key.interestOps() & ~SelectionKey.OP_WRITE);
 	}
 	
 	
+	private boolean sendInterested() throws IOException
+	{
+		if(amInterested)
+			return true;
+		amInterested = true;
+		
+		sendBuffer.clear();
+		sendBuffer.putInt(1);
+		sendBuffer.put((byte)messageInterested);
+		sendBuffer.flip();
+		channel.write(sendBuffer);
+		System.err.println(this + "sent interested");
+		return !sendBuffer.hasRemaining();
+	}
+
 	private boolean sendHaveMessages() throws IOException
 	{
 		sendBuffer.clear();
@@ -490,11 +514,6 @@ public class Peer {
 	private boolean sendRequests() throws IOException
 	{
 		sendBuffer.clear();
-		if(!amInterested) {
-			amInterested = true;
-			sendBuffer.putInt(1);
-			sendBuffer.put((byte)2);
-		}
 		
 		while(requestedFrags.size() < MAX_REQUESTED_FRAGS) {
 			Pieces.PieceFrag f = pieceSelector.selectPiece(this);

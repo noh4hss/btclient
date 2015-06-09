@@ -362,6 +362,7 @@ public class Torrent {
 								channel.connect(addr);
 								channel.register(selector, SelectionKey.OP_CONNECT);
 							} catch (IOException e) {
+								peersAddresses.remove(addr);
 								continue;
 							}
 							
