@@ -77,11 +77,11 @@ public class Peer {
 				throw new IOException("channel.finishConnect() returned false");
 			}
 		} catch(IOException e) {
-			System.err.println(this + "connect(): " + e.getMessage());
+			//System.err.println(this + "connect(): " + e.getMessage());
 			return;
 		}
 		
-		System.err.println(this + "connect successful");
+		//System.err.println(this + "connect successful");
 		
 		connected = true;
 		key.interestOps(SelectionKey.OP_READ);
@@ -131,12 +131,10 @@ public class Peer {
 			if(channel.write(sendBuffer) != HANDSHAKE_LEN)
 				throw new IOException("non-full write");
 		} catch(IOException e) {
-			System.err.println(this + "sending handshake: " + e.getMessage());
+			//System.err.println(this + "sending handshake: " + e.getMessage());
 			endConnection();
 			return;
 		}
-		sendBuffer.clear();
-		sendBuffer.limit(0);
 	}
 	
 	public void process()
@@ -148,12 +146,12 @@ public class Peer {
 			if(key.isReadable()) {
 				receiveMessages();
 			}
-			if(receivedHandshake && key.isWritable()) {
+			if(key.isWritable()) {
 				sendMessages();
 			}
 		} catch(IOException e) {
 			if(!(e instanceof ClosedByInterruptException)) {
-				System.err.println(this + e.getMessage());
+				//System.err.println(this + e.getMessage());
 			}
 			endConnection();
 		}
@@ -174,7 +172,9 @@ public class Peer {
 	private void receiveMessages() throws IOException
 	{				
 		if(!receivedHandshake) {
-			channel.read(recvBuffer);
+			int nread = channel.read(recvBuffer);
+			if(nread == -1)
+				throw new IOException("peer ended connection");
 			if(recvBuffer.hasRemaining())
 				return;
 			
@@ -185,16 +185,22 @@ public class Peer {
 			
 			tor.incrementPeersCount();
 			
-			System.err.println(this + "received handshake");
+			//System.err.println(this + "received handshake");
 			
 			sendBitfield();
+			
+			key.interestOps(key.interestOps() | SelectionKey.OP_WRITE);
 		}
 		
 		while(!tor.maxDownloadSpeedExceeded()) {
 			if(recvBuffer.limit() == 0)
 				recvBuffer.limit(4);
 			
-			int x = channel.read(recvBuffer);
+			int nread = channel.read(recvBuffer);
+			if(nread == -1) {
+				throw new IOException("peer ended connection");
+			}
+			
 			if(recvBuffer.position() < 4)
 				return;
 			
@@ -208,7 +214,7 @@ public class Peer {
 			recvBuffer.limit(len+4);
 			
 			if(currentRecvMessage == messagePiece)
-				tor.increaseDownloaded(x);
+				tor.increaseDownloaded(nread);
 			
 			if(recvBuffer.hasRemaining())
 				return;
@@ -224,7 +230,7 @@ public class Peer {
 	{
 		int len = recvBuffer.limit()-4;
 		if(len == 0) {
-			System.err.println(this + "received keep-alive");
+			//System.err.println(this + "received keep-alive");
 			return;
 		}
 		
@@ -232,77 +238,56 @@ public class Peer {
 		int id = recvBuffer.get();
 		switch(id) {
 		case messageChoke:
-			System.err.println(this + "received choke");
+			//System.err.println(this + "received choke");
 			if(len != 1)
 				throw new IOException("choke message invalid length");
-			peerChoking = true;
+			receivedChoke();
 			break;
 		case messageUnchoke:
-			System.err.println(this + "received unchoke");
+			//System.err.println(this + "received unchoke");
 			if(len != 1)
 				throw new IOException("unchoke message invalid length");
-			peerChoking = false;
+			receivedUnchoke();
 			break;
 		case messageInterested:
-			System.err.println(this + "received interested");
+			//System.err.println(this + "received interested");
 			if(len != 1)
 				throw new IOException("intersted message invalid length");
-			peerInterested = true;
+			receivedInterested();
 			break;
 		case messageNotInterested:
-			System.err.println(this + "received not interested");
+			//System.err.println(this + "received not interested");
 			if(len != 1)
 				throw new IOException("not interested message invalid length");
-			peerInterested = false;
+			receivedNotInterested();
 			break;
 		case messageHave:
 			if(len != 5)
 				throw new IOException("have message invalid length");
-			int pieceIndex = recvBuffer.getInt();
-			try {
-				bs.set(pieceIndex);
-				pieceSelector.addPiece(pieceIndex);
-			} catch(IndexOutOfBoundsException e) {
-				throw new IOException("have message invalid piece index");
-			}
-			System.err.println(this + "received have " + pieceIndex);
+			receivedHave();
 			break;
 		case messageBitfield:
-			receiveBitfield(len-1);
+			receivedBitfield(len-1);
 			break;
 		case messagePiece:
-			receivePiece(len-1);
+			receivedPiece(len-1);
 			break;
 		case messageRequest:
-		{	
 			if(len != 13)
 				throw new IOException("request message invalid length");
-			int index = recvBuffer.getInt();
-			int begin = recvBuffer.getInt();
-			int length = recvBuffer.getInt();
-			if(pieces.validFragToSend(index, begin, length)) {
-				peerRequestedFrags.add(new Pieces.PeerFrag(index, begin, length));
-			}
-			System.err.println(this + "received request " + index + "," + begin/Pieces.FRAG_LENGTH);
+			receivedRequest();
 			break;
-		}
 		case messageCancel:
 			if(len != 13)
 				throw new IOException("cancel message invalid length");
-			int index = recvBuffer.getInt();
-			int begin = recvBuffer.getInt();
-			int length = recvBuffer.getInt();
-			peerRequestedFrags.remove(new Pieces.PeerFrag(index, begin, length));
-			System.err.println(this + "received cancel " + index + "," + begin/Pieces.FRAG_LENGTH);
+			receivedCancel();
 			break;	
 		default:
-			System.err.println(this + "received message with uknown id=" + id);
+			//System.err.println(this + "received message with uknown id=" + id);
 			// we just ignore this message
 			recvBuffer.get(new byte[len-1]);
 			break;
 		}
-		
-		key.interestOps(key.interestOps() | SelectionKey.OP_WRITE);
 	}
 	
 	private void verifyHandshake() throws IOException
@@ -315,9 +300,48 @@ public class Peer {
 			throw new IOException("invalid info hash in handshake");
 	}
 	
+	private void receivedChoke()
+	{
+		peerChoking = true;
+		canceledRequests.addAll(requestedFrags);
+		requestedFrags.clear();
+	}
+	
+	private void receivedUnchoke()
+	{
+		peerChoking = false;
+		key.interestOps(key.interestOps() | SelectionKey.OP_WRITE);
+	}
+	
+	private void receivedInterested()
+	{
+		peerInterested = true;
+		key.interestOps(key.interestOps() | SelectionKey.OP_WRITE);
+	}
+	
+	private void receivedNotInterested()
+	{
+		peerInterested = false;
+	}
+	
+	private void receivedHave() throws IOException
+	{
+		int pieceIndex = recvBuffer.getInt();
+		try {
+			bs.set(pieceIndex);
+			pieceSelector.addPiece(pieceIndex);
+		} catch(IndexOutOfBoundsException e) {
+			throw new IOException("have message invalid piece index");
+		}
+		//System.err.println(this + "received have " + pieceIndex);
+		
+		if(!pieces.isVerified(pieceIndex))
+			key.interestOps(key.interestOps() | SelectionKey.OP_WRITE);
+	}
+	
 	private boolean bitfieldReceived = false;
 	
-	private void receiveBitfield(int len) throws IOException
+	private void receivedBitfield(int len) throws IOException
 	{
 		if(bitfieldReceived) {
 			throw new IOException("bitfield was already received");
@@ -344,10 +368,12 @@ public class Peer {
 			}
 		}
 		
-		System.err.println(this + "bitfield received");
+		//System.err.println(this + "bitfield received");
+	
+		key.interestOps(key.interestOps() | SelectionKey.OP_WRITE);
 	}
 	
-	private void receivePiece(int len) throws IOException
+	private void receivedPiece(int len) throws IOException
 	{
 		int index = recvBuffer.getInt();
 		int begin = recvBuffer.getInt();
@@ -372,8 +398,32 @@ public class Peer {
 			if(downloadCount >= pieces.getPieceLength())
 				oneDownloaded = true;
 			
-			System.err.println(this + "received piece " + index);
+			//System.err.println(this + "received piece " + f.index + "," + f.frag);
 		}
+		
+		key.interestOps(key.interestOps() | SelectionKey.OP_WRITE);
+	}
+	
+	private void receivedRequest()
+	{
+		int index = recvBuffer.getInt();
+		int begin = recvBuffer.getInt();
+		int length = recvBuffer.getInt();
+		if(pieces.validFragToSend(index, begin, length)) {
+			peerRequestedFrags.add(new Pieces.PeerFrag(index, begin, length));
+		}
+		//System.err.println(this + "received request " + index + "," + begin/Pieces.FRAG_LENGTH);
+		
+		key.interestOps(key.interestOps() | SelectionKey.OP_WRITE);
+	}
+	
+	private void receivedCancel()
+	{
+		int index = recvBuffer.getInt();
+		int begin = recvBuffer.getInt();
+		int length = recvBuffer.getInt();
+		peerRequestedFrags.remove(new Pieces.PeerFrag(index, begin, length));
+		//System.err.println(this + "received cancel " + index + "," + begin/Pieces.FRAG_LENGTH);
 	}
 	
 	private void sendMessages() throws IOException 
@@ -430,7 +480,7 @@ public class Peer {
 		sendBuffer.put((byte)messageInterested);
 		sendBuffer.flip();
 		channel.write(sendBuffer);
-		System.err.println(this + "sent interested");
+		//System.err.println(this + "sent interested");
 		return !sendBuffer.hasRemaining();
 	}
 
@@ -443,7 +493,7 @@ public class Peer {
 			sendBuffer.put((byte)messageHave);
 			sendBuffer.putInt(index);
 			
-			System.err.println(this + "sent have " + index);
+			//System.err.println(this + "sent have " + index);
 		}
 		
 		sendBuffer.flip();
@@ -466,7 +516,7 @@ public class Peer {
 		sendBuffer.put(bitfield);
 		sendBuffer.flip();
 		
-		System.err.println(this + "sent bitfield");
+		//System.err.println(this + "sent bitfield");
 	}
 	
 	private boolean sendFragment(PeerFrag f) throws IOException
@@ -481,7 +531,7 @@ public class Peer {
 		sendBuffer.flip();
 		channel.write(sendBuffer);
 		tor.increaseUploadCount(b.length);
-		System.err.println(this + "sent fragment " + f.index + "," + f.begin/Pieces.FRAG_LENGTH);
+		//System.err.println(this + "sent fragment " + f.index + "," + f.begin/Pieces.FRAG_LENGTH);
 		return !sendBuffer.hasRemaining();
 	}
 
@@ -507,7 +557,7 @@ public class Peer {
 		sendBuffer.put((byte)messageUnchoke);
 		sendBuffer.flip();
 		channel.write(sendBuffer);
-		System.err.println(this + "sent unchoke");
+		//System.err.println(this + "sent unchoke");
 		return !sendBuffer.hasRemaining();		
 	}
 	
@@ -527,7 +577,7 @@ public class Peer {
 			sendBuffer.putInt(pieces.getFragLength(f));
 			
 			requestedFrags.add(f);
-			System.err.println(this + "sent request " + f.index + "," + f.frag);
+			//System.err.println(this + "sent request " + f.index + "," + f.frag);
 		}
 				
 		sendBuffer.flip();
@@ -550,7 +600,7 @@ public class Peer {
 				sendBuffer.putInt(f.index);
 				sendBuffer.putInt(f.frag*Pieces.FRAG_LENGTH);
 				sendBuffer.putInt(pieces.getFragLength(f));
-				System.err.println(this + "sent cancel " + f.index + "," + f.frag);
+				//System.err.println(this + "sent cancel " + f.index + "," + f.frag);
 			}
 		}
 		

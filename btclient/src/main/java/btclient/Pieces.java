@@ -11,7 +11,6 @@ import java.util.BitSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicInteger;
 
 
@@ -188,7 +187,6 @@ public class Pieces {
 				p[i].state = PieceState.FREE;
 				freePiecesCount.incrementAndGet();
 			} else {
-				System.err.println(p[i].writeCount);
 				p[i].state = PieceState.DOWNLOADED;
 				fragmentSaver.readPiece(i);
 			}
@@ -306,9 +304,9 @@ public class Pieces {
 			
 			tor.addPieceToPeers(index);
 			
-			System.err.println("piece " + index + " failed verification");
+			//System.err.println("piece " + index + " failed verification");
 			if(piece.peer != null) {
-				System.err.println("banning " + piece.peer.getInetAddress());
+				//System.err.println("banning " + piece.peer.getInetAddress());
 				tor.blacklistAddress(piece.peer.getInetAddress());
 			}
 			
@@ -438,7 +436,7 @@ public class Pieces {
 		if(endGame)
 			return;
 		
-		System.err.println("end-game on");
+		//System.err.println("end-game on");
 		endGame = true;
 		for(int i = 0; i < piecesCount; ++i) {
 			if(p[i].state == PieceState.DOWNLOADING)

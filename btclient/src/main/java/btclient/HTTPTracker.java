@@ -2,18 +2,13 @@ package btclient;
 
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.MalformedURLException;
-import java.net.Socket;
 import java.net.URL;
-import java.net.URLEncoder;
-import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -54,7 +49,6 @@ public class HTTPTracker extends Tracker {
 			
 			conn.setReadTimeout(5 * 1000);
 			if(conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
-				System.err.println(conn.getResponseCode());
 				return null;
 			}
 			
@@ -143,21 +137,6 @@ public class HTTPTracker extends Tracker {
 			
 			
 		} catch(ParsingError | Exception e) {
-			e.printStackTrace();
-			try {
-				System.err.println(InetAddress.getByName(url.getHost()));
-			} catch (UnknownHostException e2) {
-				// TODO Auto-generated catch block
-				e2.printStackTrace();
-			}
-			try {
-				FileOutputStream out = new FileOutputStream("/home/noh4h_ss/wtf");
-				out.write(b);
-				out.close();
-			} catch (IOException e1) {
-				// TODO Auto-generated catch block
-				e1.printStackTrace();
-			}
 			return null;
 		}
 		

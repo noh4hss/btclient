@@ -23,7 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicLong;
 
 
 
@@ -311,11 +310,13 @@ public class Torrent {
 						try {
 							selector.select(1000);
 						} catch (IOException e) {
-							if(Thread.currentThread().isInterrupted())
-								break;
 							System.err.println(Torrent.this + "select() failed: " + e.getMessage());
 							break;
 						}
+						
+						if(Thread.currentThread().isInterrupted())
+							break;
+						
 						Set<SelectionKey> keys = selector.selectedKeys();
 						
 						Iterator<SelectionKey> it = keys.iterator();
@@ -713,5 +714,10 @@ public class Torrent {
 	public boolean maxDownloadSpeedExceeded()
 	{
 		return maxDownloadSpeed > 0 && downloadCount - lastDownloadCount >= maxDownloadSpeed;
+	}
+	
+	public boolean maxUploadSpeedExceeded()
+	{
+		return maxUploadSpeed > 0 && uploadCount - lastUploadCount >= maxUploadSpeed;
 	}
 }
